@@ -136,10 +136,48 @@ const CSV_TEMPLATE =
   'word,correctDefinition,distractor1,distractor2,distractor3,difficulty\n' +
   'Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",6\n';
 
+// ── Embedding helpers ─────────────────────────────────────────────────────────
+// These are module-level (no component state) so they can be called anywhere.
+
+const EMBED_BATCH_SIZE = 100; // Gemini batchEmbedContents maximum
+
+function embedText(word: string, definition: string): string {
+  return `word: ${word}. definition: ${definition}`;
+}
+
+/**
+ * Calls the /api/embed server proxy (keeps GEMINI_API_KEY out of the browser).
+ * Returns null if the key isn't configured (503) or on any error — callers
+ * should treat null as "skip silently" rather than surfacing an error.
+ */
+async function fetchEmbeddings(texts: string[]): Promise<number[][] | null> {
+  try {
+    const res = await fetch('/api/embed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts }),
+    });
+    if (res.status === 503) return null; // key not configured — silent skip
+    if (!res.ok) return null;
+    const { embeddings } = await res.json() as { embeddings: number[][] };
+    return embeddings ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stores a single L2-normalised embedding vector into the words table. */
+async function storeEmbedding(id: string, embedding: number[]): Promise<void> {
+  await supabase
+    .from('words')
+    .update({ embedding: JSON.stringify(embedding) })
+    .eq('id', id);
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const { user, loading: authLoading, isAdmin } = useAuth();
+  const { user, profile, loading: authLoading, isAdmin } = useAuth();
   const router = useRouter();
 
   const [tab, setTab] = useState<Tab>('words');
@@ -174,6 +212,11 @@ export default function AdminPage() {
   const [csvError, setCsvError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Embedding status ──────────────────────────────────────────────────────
+  const [addEmbedStatus, setAddEmbedStatus] = useState<'idle' | 'generating' | 'done' | 'error'>('idle');
+  const [csvEmbedStatus, setCsvEmbedStatus] = useState<'idle' | 'generating' | 'done' | 'error'>('idle');
+  const [csvEmbedProgress, setCsvEmbedProgress] = useState<{ done: number; total: number } | null>(null);
+
   // ── Game config state ─────────────────────────────────────────────────────
   const [config, setConfig] = useState<GameConfig>(DEFAULT_GAME_CONFIG);
   const [configLoading, setConfigLoading] = useState(true);
@@ -192,7 +235,7 @@ export default function AdminPage() {
     try {
       const { data, error } = await supabase
         .from('words')
-        .select('*')
+        .select('id, word, correct_definition, distractors, difficulty, created_at, updated_at')
         .order('word');
       if (error) throw error;
       setWords((data ?? []) as Word[]);
@@ -335,6 +378,11 @@ export default function AdminPage() {
     setAddSaving(true);
     setAddError(null);
     setAddSuccess(false);
+    setAddEmbedStatus('idle');
+
+    let insertedId: string | null = null;
+    let insertedWord: { word: string; correct_definition: string } | null = null;
+
     try {
       const row = draftToRow(addDraft);
       const { data, error } = await supabase
@@ -343,6 +391,8 @@ export default function AdminPage() {
         .select()
         .single();
       if (error) throw error;
+      insertedId = (data as Word).id;
+      insertedWord = { word: row.word, correct_definition: row.correct_definition };
       setWords((prev) =>
         [...prev, data as Word].sort((a, b) => a.word.localeCompare(b.word)),
       );
@@ -354,6 +404,21 @@ export default function AdminPage() {
       setAddError('Failed to add word. Check your connection and try again.');
     } finally {
       setAddSaving(false);
+    }
+
+    // Generate embedding after insert — word is already saved regardless of outcome
+    if (insertedId && insertedWord) {
+      setAddEmbedStatus('generating');
+      const embeddings = await fetchEmbeddings([
+        embedText(insertedWord.word, insertedWord.correct_definition),
+      ]);
+      if (embeddings?.[0]) {
+        await storeEmbedding(insertedId, embeddings[0]);
+        setAddEmbedStatus('done');
+      } else {
+        setAddEmbedStatus('error');
+      }
+      setTimeout(() => setAddEmbedStatus('idle'), 5000);
     }
   }
 
@@ -385,8 +450,12 @@ export default function AdminPage() {
     if (validRows.length === 0) return;
     setCsvImporting(true);
     setCsvResult(null);
+    setCsvEmbedStatus('idle');
+    setCsvEmbedProgress(null);
     let added = 0;
     let failed = 0;
+    const inserted: { id: string; word: string; correct_definition: string }[] = [];
+
     for (const row of validRows) {
       try {
         const { data, error } = await supabase
@@ -403,6 +472,11 @@ export default function AdminPage() {
         setWords((prev) =>
           [...prev, data as Word].sort((a, b) => a.word.localeCompare(b.word)),
         );
+        inserted.push({
+          id: (data as Word).id,
+          word: row.word,
+          correct_definition: row.correctDefinition,
+        });
         added++;
       } catch {
         failed++;
@@ -412,6 +486,31 @@ export default function AdminPage() {
     setCsvImporting(false);
     setCsvRows([]);
     setCsvFileName('');
+
+    // Batch-embed all inserted words — words are already saved regardless
+    if (inserted.length > 0) {
+      setCsvEmbedStatus('generating');
+      setCsvEmbedProgress({ done: 0, total: inserted.length });
+      let embeddedCount = 0;
+
+      for (let i = 0; i < inserted.length; i += EMBED_BATCH_SIZE) {
+        const batch = inserted.slice(i, i + EMBED_BATCH_SIZE);
+        const texts = batch.map((w) => embedText(w.word, w.correct_definition));
+        const embeddings = await fetchEmbeddings(texts);
+        if (embeddings) {
+          for (let j = 0; j < batch.length; j++) {
+            if (embeddings[j]) {
+              await storeEmbedding(batch[j].id, embeddings[j]);
+              embeddedCount++;
+            }
+          }
+        }
+        setCsvEmbedProgress({ done: i + batch.length, total: inserted.length });
+      }
+
+      setCsvEmbedStatus(embeddedCount > 0 ? 'done' : 'error');
+      setTimeout(() => { setCsvEmbedStatus('idle'); setCsvEmbedProgress(null); }, 5000);
+    }
   }
 
   function downloadTemplate() {
@@ -442,7 +541,7 @@ export default function AdminPage() {
           <div className="ml-auto text-right">
             <p className="text-xs text-gray-500">Signed in as</p>
             <p className="text-sm font-medium text-violet-300 truncate max-w-[160px]">
-              {(user.user_metadata?.full_name as string) ?? user.email}
+              {profile?.name ?? user.email}
             </p>
           </div>
         </div>
@@ -578,6 +677,23 @@ export default function AdminPage() {
                 Word added successfully!
               </div>
             )}
+            {addEmbedStatus !== 'idle' && (
+              <div className={`flex items-center gap-2 text-sm rounded-xl px-4 py-3 border ${
+                addEmbedStatus === 'generating'
+                  ? 'text-violet-300 bg-violet-950/40 border-violet-800'
+                  : addEmbedStatus === 'done'
+                    ? 'text-emerald-400 bg-emerald-950 border-emerald-800'
+                    : 'text-amber-400 bg-amber-950/40 border-amber-800'
+              }`}>
+                {addEmbedStatus === 'generating' ? (
+                  <><Loader2 className="w-4 h-4 animate-spin shrink-0" /> Generating embedding&hellip;</>
+                ) : addEmbedStatus === 'done' ? (
+                  <><Check className="w-4 h-4 shrink-0" /> Embedding stored &mdash; word is now searchable via vector search.</>
+                ) : (
+                  <><AlertCircle className="w-4 h-4 shrink-0" /> Embedding skipped &mdash; word saved, but won&apos;t appear in semantic search. Is <code className="text-amber-300">GEMINI_API_KEY</code> set?</>
+                )}
+              </div>
+            )}
           </section>
         )}
 
@@ -633,9 +749,29 @@ export default function AdminPage() {
             {csvResult && (
               <div className="flex items-center gap-2 text-emerald-400 text-sm bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-3">
                 <Check className="w-4 h-4 shrink-0" />
-                Import complete — {csvResult.added} added
+                Import complete &mdash; {csvResult.added} added
                 {csvResult.failed > 0 && (
                   <span className="text-red-400">, {csvResult.failed} failed</span>
+                )}
+              </div>
+            )}
+            {csvEmbedStatus !== 'idle' && (
+              <div className={`flex items-center gap-2 text-sm rounded-xl px-4 py-3 border ${
+                csvEmbedStatus === 'generating'
+                  ? 'text-violet-300 bg-violet-950/40 border-violet-800'
+                  : csvEmbedStatus === 'done'
+                    ? 'text-emerald-400 bg-emerald-950 border-emerald-800'
+                    : 'text-amber-400 bg-amber-950/40 border-amber-800'
+              }`}>
+                {csvEmbedStatus === 'generating' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    Generating embeddings{csvEmbedProgress ? ` (${csvEmbedProgress.done}/${csvEmbedProgress.total})` : ''}&hellip;
+                  </>
+                ) : csvEmbedStatus === 'done' ? (
+                  <><Check className="w-4 h-4 shrink-0" /> Embeddings stored &mdash; all words are searchable via vector search.</>
+                ) : (
+                  <><AlertCircle className="w-4 h-4 shrink-0" /> Embeddings skipped &mdash; words saved, but won&apos;t appear in semantic search. Is <code className="text-amber-300">GEMINI_API_KEY</code> set?</>
                 )}
               </div>
             )}

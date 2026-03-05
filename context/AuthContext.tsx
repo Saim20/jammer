@@ -10,10 +10,12 @@ import {
 import type { User, Session } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import type { UserProfile } from '@/types';
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
+  profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
   signInWithGoogle: () => Promise<void>;
@@ -23,6 +25,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
+  profile: null,
   loading: true,
   isAdmin: false,
   signInWithGoogle: async () => {},
@@ -32,20 +35,20 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
-  async function checkAdmin(userId: string) {
+  async function fetchProfile(userId: string) {
     try {
       const { data } = await supabase
-        .from('admins')
-        .select('user_id')
-        .eq('user_id', userId)
+        .from('users')
+        .select('id, name, avatar_url, role, created_at, updated_at')
+        .eq('id', userId)
         .maybeSingle();
-      setIsAdmin(data !== null);
+      setProfile(data as UserProfile | null);
     } catch {
-      setIsAdmin(false);
+      setProfile(null);
     }
   }
 
@@ -55,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        checkAdmin(session.user.id).finally(() => setLoading(false));
+        fetchProfile(session.user.id).finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -68,9 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        await checkAdmin(session.user.id);
+        await fetchProfile(session.user.id);
       } else {
-        setIsAdmin(false);
+        setProfile(null);
       }
       setLoading(false);
     });
@@ -101,8 +104,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const isAdmin = profile?.role === 'admin';
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, isAdmin, signInWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

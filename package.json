@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:supabase": "node scripts/seed-supabase.mjs",
+    "seed:supabase:embed": "node scripts/seed-supabase.mjs --embed-only"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
@@ -22,7 +24,6 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "firebase-admin": "^13.7.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

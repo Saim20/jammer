@@ -46,7 +46,7 @@ export default function GamePage() {
   const hasAnsweredRef = useRef(false);
 
   // Accumulates each word result during the game so they can be batch-saved at the end
-  const wordResultsRef = useRef<{ word_id: string; correct: boolean }[]>([]);
+  const wordResultsRef = useRef<{ word_id: string; answer_index: number | null; time_taken: number }[]>([]);
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -86,10 +86,10 @@ export default function GamePage() {
         setConfig(resolvedConfig);
         timerSecondsRef.current = resolvedConfig.timer_seconds;
 
-        // Fetch all words, filter by difficulty range, shuffle, then slice to word_count
+        // Fetch all words — exclude the embedding column (large, not needed on the client)
         const { data: allWords, error } = await supabase
           .from('words')
-          .select('*');
+          .select('id, word, correct_definition, distractors, difficulty');
 
         if (error) throw error;
         if (!allWords || allWords.length === 0) {
@@ -132,8 +132,15 @@ export default function GamePage() {
       const currentWord = words[currentIndex];
       const correct = choice !== null && choice === currentWord.correct_definition;
 
-      // Record this answer so we can persist stats at game end
-      wordResultsRef.current.push({ word_id: currentWord.id, correct });
+      // Map chosen text back to its canonical slot (independent of shuffle order):
+      // 0 = correct_definition, 1-3 = distractors[0..2], null = timeout
+      const answer_index: number | null =
+        choice === null ? null
+        : choice === currentWord.correct_definition ? 0
+        : currentWord.distractors.indexOf(choice) + 1 || null;
+
+      // Record for end-of-game persistence — correct is derived server-side from answer_index
+      wordResultsRef.current.push({ word_id: currentWord.id, answer_index, time_taken: timerSecondsRef.current - timeLeft });
 
       setSelectedAnswer(choice ?? '__timeout__');
       setIsCorrect(correct);
@@ -174,27 +181,18 @@ export default function GamePage() {
     async function saveResults() {
       setSavingScore(true);
       try {
-        const userName  = (user!.user_metadata?.full_name as string) ?? user!.email ?? 'Anonymous';
-        const userPhoto = (user!.user_metadata?.avatar_url as string) ?? '';
+        // max_score = 200 pts/word (100 base + 10 × timer_seconds when answered immediately)
+        const maxScore = words.length * (100 + timerSecondsRef.current * 10);
 
-        const [{ error: scoreError }, { error: statsError }] = await Promise.all([
-          // Upsert leaderboard – keeps the player's personal best per type
-          supabase.rpc('submit_score', {
-            p_user_id:    user!.id,
-            p_user_name:  userName,
-            p_user_photo: userPhoto,
-            p_score:      score,
-            p_type:       'global',
-          }),
-          // Batch-increment per-word correct/incorrect counters
-          supabase.rpc('record_word_results', {
-            p_user_id: user!.id,
-            p_results: wordResultsRef.current,
-          }),
-        ]);
+        const { error } = await supabase.rpc('submit_game_session', {
+          p_user_id:   user!.id,
+          p_score:     score,
+          p_max_score: maxScore,
+          p_words:     wordResultsRef.current,
+          p_type:      'global',
+        });
 
-        if (scoreError) throw scoreError;
-        if (statsError) console.warn('Word stats save failed:', statsError);
+        if (error) throw error;
         setScoreSaved(true);
       } catch (err) {
         console.error('Failed to save results:', err);
@@ -203,7 +201,7 @@ export default function GamePage() {
       }
     }
     saveResults();
-  }, [phase, scoreSaved, user, score]);
+  }, [phase, scoreSaved, user, score, words.length]);
 
   function restart() {
     wordResultsRef.current = [];

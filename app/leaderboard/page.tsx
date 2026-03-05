@@ -15,7 +15,7 @@ export default function LeaderboardPage() {
 
   const fetchLeaderboard = useCallback(async () => {
     const { data, error } = await supabase
-      .from('leaderboard')
+      .from('leaderboard_ranked')
       .select('*')
       .eq('type', 'global')
       .order('score', { ascending: false })
@@ -95,19 +95,19 @@ export default function LeaderboardPage() {
                 {entry.user_photo ? (
                   <Image
                     src={entry.user_photo}
-                    alt={entry.user_name}
+                    alt={entry.user_name ?? 'Player'}
                     width={40}
                     height={40}
                     className="rounded-full shrink-0 ring-2 ring-gray-700"
                   />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-violet-700 flex items-center justify-center font-bold text-sm shrink-0">
-                    {entry.user_name[0]?.toUpperCase() ?? '?'}
+                    {entry.user_name?.[0]?.toUpperCase() ?? '?'}
                   </div>
                 )}
 
                 {/* Name */}
-                <span className="flex-1 font-semibold truncate">{entry.user_name}</span>
+                <span className="flex-1 font-semibold truncate">{entry.user_name ?? 'Anonymous'}</span>
 
                 {/* Score */}
                 <span

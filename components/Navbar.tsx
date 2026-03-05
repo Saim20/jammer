@@ -6,7 +6,7 @@ import { BookOpen, Trophy, LogOut, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 export default function Navbar() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, profile, logout, isAdmin } = useAuth();
 
   return (
     <nav className="sticky top-0 z-50 border-b border-gray-800 bg-gray-950/80 backdrop-blur-md">
@@ -42,21 +42,21 @@ export default function Navbar() {
           {user && (
             <>
               <div className="flex items-center gap-2 pl-3 ml-2 border-l border-gray-800">
-                {user.user_metadata?.avatar_url ? (
+                {profile?.avatar_url ? (
                   <Image
-                    src={user.user_metadata.avatar_url as string}
-                    alt={(user.user_metadata?.full_name as string) ?? 'User'}
+                    src={profile.avatar_url}
+                    alt={profile.name ?? 'User'}
                     width={32}
                     height={32}
                     className="rounded-full ring-2 ring-violet-500"
                   />
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-sm font-bold">
-                    {((user.user_metadata?.full_name as string) ?? user.email ?? 'U')[0]?.toUpperCase()}
+                    {(profile?.name ?? user?.email ?? 'U')[0]?.toUpperCase()}
                   </div>
                 )}
                 <span className="hidden sm:block text-sm text-gray-300 max-w-[120px] truncate">
-                  {(user.user_metadata?.full_name as string) ?? user.email}
+                  {profile?.name ?? user?.email}
                 </span>
               </div>
 
