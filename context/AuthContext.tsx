@@ -7,18 +7,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import {
-  type User,
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-} from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import type { User, Session } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
-import { auth, db, googleProvider } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 
 interface AuthContextType {
   user: User | null;
+  session: Session | null;
   loading: boolean;
   isAdmin: boolean;
   signInWithGoogle: () => Promise<void>;
@@ -27,6 +22,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  session: null,
   loading: true,
   isAdmin: false,
   signInWithGoogle: async () => {},
@@ -35,32 +31,62 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
+  async function checkAdmin(userId: string) {
+    try {
+      const { data } = await supabase
+        .from('admins')
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      setIsAdmin(data !== null);
+    } catch {
+      setIsAdmin(false);
+    }
+  }
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        try {
-          const adminSnap = await getDoc(doc(db, 'admins', firebaseUser.uid));
-          setIsAdmin(adminSnap.exists());
-        } catch {
-          setIsAdmin(false);
-        }
+    // Restore session on mount (also handles implicit OAuth hash on redirect return)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        checkAdmin(session.user.id).finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    });
+
+    // Keep auth state in sync
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        await checkAdmin(session.user.id);
       } else {
         setIsAdmin(false);
       }
       setLoading(false);
     });
-    return () => unsubscribe();
-  }, []);
+
+    return () => subscription.unsubscribe();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function signInWithGoogle() {
     try {
-      await signInWithPopup(auth, googleProvider);
-      router.push('/game');
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/game`,
+          queryParams: { prompt: 'select_account' },
+        },
+      });
     } catch (err) {
       console.error('Google sign-in failed:', err);
     }
@@ -68,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function logout() {
     try {
-      await firebaseSignOut(auth);
+      await supabase.auth.signOut();
       router.push('/');
     } catch (err) {
       console.error('Sign-out failed:', err);
@@ -76,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, signInWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

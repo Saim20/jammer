@@ -36,7 +36,7 @@ export default function GameBoard({
     }
 
     // Feedback: always highlight the correct answer green
-    if (choice === word.correctDefinition) {
+    if (choice === word.correct_definition) {
       return base + 'border-emerald-500 bg-emerald-950 text-emerald-300 animate-pop';
     }
 

@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, getDocs, addDoc, getDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { Trophy, RotateCcw, AlertCircle } from 'lucide-react';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import GameBoard from '@/components/GameBoard';
 import CountdownTimer from '@/components/CountdownTimer';
@@ -28,7 +27,7 @@ export default function GamePage() {
 
   const [config, setConfig] = useState<GameConfig>(DEFAULT_GAME_CONFIG);
   // timerSecondsRef always reflects the current config so callbacks don't stale-close over it
-  const timerSecondsRef = useRef(DEFAULT_GAME_CONFIG.timerSeconds);
+  const timerSecondsRef = useRef(DEFAULT_GAME_CONFIG.timer_seconds);
 
   const [restartKey, setRestartKey] = useState(0);
   const [words, setWords] = useState<Word[]>([]);
@@ -38,13 +37,16 @@ export default function GamePage() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [timeLeft, setTimeLeft] = useState(DEFAULT_GAME_CONFIG.timerSeconds);
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_GAME_CONFIG.timer_seconds);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [scoreSaved, setScoreSaved] = useState(false);
   const [savingScore, setSavingScore] = useState(false);
 
   // Ref guard: prevents double-submission if timer fires at the same tick as a click
   const hasAnsweredRef = useRef(false);
+
+  // Accumulates each word result during the game so they can be batch-saved at the end
+  const wordResultsRef = useRef<{ word_id: string; correct: boolean }[]>([]);
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -54,7 +56,7 @@ export default function GamePage() {
   // ── startWord: resets per-question state ───────────────────────────────────
   const startWord = useCallback((index: number, wordList: Word[]) => {
     const w = wordList[index];
-    setChoices(shuffleArray([w.correctDefinition, ...w.distractors]));
+    setChoices(shuffleArray([w.correct_definition, ...w.distractors]));
     setSelectedAnswer(null);
     setIsCorrect(null);
     setTimeLeft(timerSecondsRef.current);
@@ -62,7 +64,7 @@ export default function GamePage() {
     setPhase('playing');
   }, []);
 
-  // ── Fetch config + words from Firestore ─────────────────────────────────────
+  // ── Fetch config + words from Supabase ─────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     async function fetchAll() {
@@ -70,37 +72,44 @@ export default function GamePage() {
         // Load config first so we can filter words correctly
         let resolvedConfig = DEFAULT_GAME_CONFIG;
         try {
-          const cfgSnap = await getDoc(doc(db, 'config', 'game'));
-          if (cfgSnap.exists()) {
-            resolvedConfig = { ...DEFAULT_GAME_CONFIG, ...(cfgSnap.data() as GameConfig) };
+          const { data: cfgData } = await supabase
+            .from('game_config')
+            .select('*')
+            .eq('id', 1)
+            .single();
+          if (cfgData) {
+            resolvedConfig = { ...DEFAULT_GAME_CONFIG, ...cfgData } as GameConfig;
           }
         } catch {
           // Config read failing is non-fatal — fall back to defaults
         }
         setConfig(resolvedConfig);
-        timerSecondsRef.current = resolvedConfig.timerSeconds;
+        timerSecondsRef.current = resolvedConfig.timer_seconds;
 
-        // Fetch all words, filter by difficulty range, shuffle, then slice to wordCount
-        const snap = await getDocs(collection(db, 'words'));
-        if (snap.empty) {
+        // Fetch all words, filter by difficulty range, shuffle, then slice to word_count
+        const { data: allWords, error } = await supabase
+          .from('words')
+          .select('*');
+
+        if (error) throw error;
+        if (!allWords || allWords.length === 0) {
           setFetchError('No words found. Ask an admin to add some first.');
           return;
         }
-        const allWords: Word[] = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Word));
 
-        const eligible = allWords.filter(
-          (w) => w.difficulty >= resolvedConfig.difficultyMin && w.difficulty <= resolvedConfig.difficultyMax,
+        const eligible = (allWords as Word[]).filter(
+          (w) => w.difficulty >= resolvedConfig.difficulty_min && w.difficulty <= resolvedConfig.difficulty_max,
         );
 
-        // If eligible pool is smaller than wordCount, use all eligible words
-        const pool = eligible.length > 0 ? eligible : allWords;
+        // If eligible pool is smaller than word_count, use all eligible words
+        const pool = eligible.length > 0 ? eligible : (allWords as Word[]);
         const shuffled = shuffleArray(pool);
-        const selected = shuffled.slice(0, resolvedConfig.wordCount);
+        const selected = shuffled.slice(0, resolvedConfig.word_count);
 
         setWords(selected);
       } catch (err) {
-        console.error('Firestore fetch error:', err);
-        setFetchError('Could not load words. Check your Firebase config.');
+        console.error('Supabase fetch error:', err);
+        setFetchError('Could not load words. Check your Supabase config.');
       }
     }
     fetchAll();
@@ -121,7 +130,10 @@ export default function GamePage() {
       hasAnsweredRef.current = true;
 
       const currentWord = words[currentIndex];
-      const correct = choice !== null && choice === currentWord.correctDefinition;
+      const correct = choice !== null && choice === currentWord.correct_definition;
+
+      // Record this answer so we can persist stats at game end
+      wordResultsRef.current.push({ word_id: currentWord.id, correct });
 
       setSelectedAnswer(choice ?? '__timeout__');
       setIsCorrect(correct);
@@ -156,30 +168,45 @@ export default function GamePage() {
     return () => clearTimeout(t);
   }, [timeLeft, phase, handleAnswer]);
 
-  // ── Save score to Firestore leaderboard ────────────────────────────────────
+  // ── Save score + word stats to Supabase ──────────────────────────────────
   useEffect(() => {
     if (phase !== 'finished' || scoreSaved || !user) return;
-    async function saveScore() {
+    async function saveResults() {
       setSavingScore(true);
       try {
-        await addDoc(collection(db, 'leaderboard'), {
-          userId: user!.uid,
-          userName: user!.displayName ?? 'Anonymous',
-          userPhoto: user!.photoURL ?? '',
-          score,
-          timestamp: serverTimestamp(),
-        });
+        const userName  = (user!.user_metadata?.full_name as string) ?? user!.email ?? 'Anonymous';
+        const userPhoto = (user!.user_metadata?.avatar_url as string) ?? '';
+
+        const [{ error: scoreError }, { error: statsError }] = await Promise.all([
+          // Upsert leaderboard – keeps the player's personal best per type
+          supabase.rpc('submit_score', {
+            p_user_id:    user!.id,
+            p_user_name:  userName,
+            p_user_photo: userPhoto,
+            p_score:      score,
+            p_type:       'global',
+          }),
+          // Batch-increment per-word correct/incorrect counters
+          supabase.rpc('record_word_results', {
+            p_user_id: user!.id,
+            p_results: wordResultsRef.current,
+          }),
+        ]);
+
+        if (scoreError) throw scoreError;
+        if (statsError) console.warn('Word stats save failed:', statsError);
         setScoreSaved(true);
       } catch (err) {
-        console.error('Failed to save score:', err);
+        console.error('Failed to save results:', err);
       } finally {
         setSavingScore(false);
       }
     }
-    saveScore();
+    saveResults();
   }, [phase, scoreSaved, user, score]);
 
   function restart() {
+    wordResultsRef.current = [];
     setScore(0);
     setScoreSaved(false);
     setPhase('loading');
@@ -206,7 +233,7 @@ export default function GamePage() {
   }
 
   if (phase === 'finished') {
-    const maxScore = words.length * (100 + config.timerSeconds * 10);
+    const maxScore = words.length * (100 + config.timer_seconds * 10);
     const pct = Math.round((score / maxScore) * 100);
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-64px)] gap-6 px-4 text-center">
@@ -259,7 +286,7 @@ export default function GamePage() {
           Score:{' '}
           <span className="text-white font-bold text-lg tabular-nums">{score}</span>
         </div>
-        <CountdownTimer timeLeft={timeLeft} totalTime={config.timerSeconds} />
+        <CountdownTimer timeLeft={timeLeft} totalTime={config.timer_seconds} />
       </div>
 
       <GameBoard
@@ -284,9 +311,9 @@ export default function GamePage() {
           {isCorrect ? (
             <>✓ Correct! +{100 + timeLeft * 10} pts</>
           ) : selectedAnswer === '__timeout__' ? (
-            <>⏰ Time&apos;s up! &quot;{currentWord.correctDefinition}&quot;</>
+            <>⏰ Time&apos;s up! &quot;{currentWord.correct_definition}&quot;</>
           ) : (
-            <>✗ Incorrect. &quot;{currentWord.correctDefinition}&quot;</>
+            <>✗ Incorrect. &quot;{currentWord.correct_definition}&quot;</>
           )}
         </div>
       )}

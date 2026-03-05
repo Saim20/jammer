@@ -42,21 +42,21 @@ export default function Navbar() {
           {user && (
             <>
               <div className="flex items-center gap-2 pl-3 ml-2 border-l border-gray-800">
-                {user.photoURL ? (
+                {user.user_metadata?.avatar_url ? (
                   <Image
-                    src={user.photoURL}
-                    alt={user.displayName ?? 'User'}
+                    src={user.user_metadata.avatar_url as string}
+                    alt={(user.user_metadata?.full_name as string) ?? 'User'}
                     width={32}
                     height={32}
                     className="rounded-full ring-2 ring-violet-500"
                   />
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-sm font-bold">
-                    {user.displayName?.[0] ?? 'U'}
+                    {((user.user_metadata?.full_name as string) ?? user.email ?? 'U')[0]?.toUpperCase()}
                   </div>
                 )}
                 <span className="hidden sm:block text-sm text-gray-300 max-w-[120px] truncate">
-                  {user.displayName}
+                  {(user.user_metadata?.full_name as string) ?? user.email}
                 </span>
               </div>
 

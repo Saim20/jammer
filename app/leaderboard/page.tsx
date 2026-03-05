@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Trophy, Gamepad2 } from 'lucide-react';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import type { LeaderboardEntry } from '@/types';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -14,33 +13,35 @@ export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const q = query(
-      collection(db, 'leaderboard'),
-      orderBy('score', 'desc'),
-      limit(10),
-    );
+  const fetchLeaderboard = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('leaderboard')
+      .select('*')
+      .eq('type', 'global')
+      .order('score', { ascending: false })
+      .limit(10);
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snap) => {
-        const data: LeaderboardEntry[] = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<LeaderboardEntry, 'id'>),
-          // Firestore Timestamp → JS Date
-          timestamp: d.data().timestamp?.toDate?.() ?? new Date(),
-        }));
-        setEntries(data);
-        setLoading(false);
-      },
-      (err) => {
-        console.error('Leaderboard snapshot error:', err);
-        setLoading(false);
-      },
-    );
-
-    return () => unsubscribe();
+    if (!error && data) {
+      setEntries(data as LeaderboardEntry[]);
+    }
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    fetchLeaderboard();
+
+    // Real-time: re-fetch whenever any leaderboard row changes
+    const channel = supabase
+      .channel('leaderboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leaderboard' },
+        fetchLeaderboard,
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchLeaderboard]);
 
   return (
     <div className="min-h-[calc(100vh-64px)] flex flex-col items-center py-12 px-4">
@@ -91,22 +92,22 @@ export default function LeaderboardPage() {
                 </span>
 
                 {/* Avatar */}
-                {entry.userPhoto ? (
+                {entry.user_photo ? (
                   <Image
-                    src={entry.userPhoto}
-                    alt={entry.userName}
+                    src={entry.user_photo}
+                    alt={entry.user_name}
                     width={40}
                     height={40}
                     className="rounded-full shrink-0 ring-2 ring-gray-700"
                   />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-violet-700 flex items-center justify-center font-bold text-sm shrink-0">
-                    {entry.userName[0]?.toUpperCase() ?? '?'}
+                    {entry.user_name[0]?.toUpperCase() ?? '?'}
                   </div>
                 )}
 
                 {/* Name */}
-                <span className="flex-1 font-semibold truncate">{entry.userName}</span>
+                <span className="flex-1 font-semibold truncate">{entry.user_name}</span>
 
                 {/* Score */}
                 <span

@@ -3,17 +3,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  collection,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  setDoc,
-  getDoc,
-  doc,
-  query,
-  orderBy,
-} from 'firebase/firestore';
-import {
   Plus,
   Trash2,
   Pencil,
@@ -33,7 +22,7 @@ import {
   Hash,
   Gauge,
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { Word, GameConfig } from '@/types';
 import { DEFAULT_GAME_CONFIG } from '@/types';
@@ -134,10 +123,10 @@ function parseCSV(text: string): CSVRow[] {
   });
 }
 
-function draftToFirestore(d: WordDraft) {
+function draftToRow(d: WordDraft) {
   return {
     word: d.word.trim(),
-    correctDefinition: d.correctDefinition.trim(),
+    correct_definition: d.correctDefinition.trim(),
     distractors: [d.distractor1.trim(), d.distractor2.trim(), d.distractor3.trim()],
     difficulty: d.difficulty,
   };
@@ -201,8 +190,12 @@ export default function AdminPage() {
   const fetchWords = useCallback(async () => {
     setLoadingWords(true);
     try {
-      const snap = await getDocs(query(collection(db, 'words'), orderBy('word')));
-      setWords(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Word)));
+      const { data, error } = await supabase
+        .from('words')
+        .select('*')
+        .order('word');
+      if (error) throw error;
+      setWords((data ?? []) as Word[]);
     } catch (err) {
       console.error('Failed to fetch words:', err);
     } finally {
@@ -220,9 +213,13 @@ export default function AdminPage() {
     async function fetchConfig() {
       setConfigLoading(true);
       try {
-        const snap = await getDoc(doc(db, 'config', 'game'));
-        if (snap.exists()) {
-          setConfig({ ...DEFAULT_GAME_CONFIG, ...(snap.data() as GameConfig) });
+        const { data, error } = await supabase
+          .from('game_config')
+          .select('*')
+          .eq('id', 1)
+          .single();
+        if (!error && data) {
+          setConfig({ ...DEFAULT_GAME_CONFIG, ...(data as GameConfig) });
         }
       } catch (err) {
         console.error('Failed to load config:', err);
@@ -238,7 +235,10 @@ export default function AdminPage() {
     setConfigError(null);
     setConfigSaved(false);
     try {
-      await setDoc(doc(db, 'config', 'game'), config);
+      const { error } = await supabase
+        .from('game_config')
+        .upsert({ id: 1, ...config });
+      if (error) throw error;
       setConfigSaved(true);
       setTimeout(() => setConfigSaved(false), 3000);
     } catch (err) {
@@ -274,7 +274,7 @@ export default function AdminPage() {
     setEditingWord(w);
     setEditDraft({
       word: w.word,
-      correctDefinition: w.correctDefinition,
+      correctDefinition: w.correct_definition,
       distractor1: w.distractors[0] ?? '',
       distractor2: w.distractors[1] ?? '',
       distractor3: w.distractors[2] ?? '',
@@ -290,11 +290,16 @@ export default function AdminPage() {
     setEditSaving(true);
     setEditError(null);
     try {
-      await setDoc(doc(db, 'words', editingWord.id), draftToFirestore(editDraft));
+      const row = draftToRow(editDraft);
+      const { error } = await supabase
+        .from('words')
+        .update(row)
+        .eq('id', editingWord.id);
+      if (error) throw error;
       setWords((prev) =>
         prev.map((w) =>
           w.id === editingWord.id
-            ? { id: editingWord.id, ...draftToFirestore(editDraft) }
+            ? { id: editingWord.id, ...row }
             : w,
         ),
       );
@@ -310,7 +315,11 @@ export default function AdminPage() {
   // ── Delete word ───────────────────────────────────────────────────────────
   async function confirmDelete(id: string) {
     try {
-      await deleteDoc(doc(db, 'words', id));
+      const { error } = await supabase
+        .from('words')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
       setWords((prev) => prev.filter((w) => w.id !== id));
     } catch (err) {
       console.error('Delete failed:', err);
@@ -327,11 +336,15 @@ export default function AdminPage() {
     setAddError(null);
     setAddSuccess(false);
     try {
-      const ref = await addDoc(collection(db, 'words'), draftToFirestore(addDraft));
+      const row = draftToRow(addDraft);
+      const { data, error } = await supabase
+        .from('words')
+        .insert(row)
+        .select()
+        .single();
+      if (error) throw error;
       setWords((prev) =>
-        [...prev, { id: ref.id, ...draftToFirestore(addDraft) }].sort((a, b) =>
-          a.word.localeCompare(b.word),
-        ),
+        [...prev, data as Word].sort((a, b) => a.word.localeCompare(b.word)),
       );
       setAddDraft(EMPTY_DRAFT);
       setAddSuccess(true);
@@ -376,20 +389,19 @@ export default function AdminPage() {
     let failed = 0;
     for (const row of validRows) {
       try {
-        const ref = await addDoc(collection(db, 'words'), {
-          word: row.word,
-          correctDefinition: row.correctDefinition,
-          distractors: [row.distractor1, row.distractor2, row.distractor3],
-          difficulty: row.difficulty,
-        });
-        setWords((prev) =>
-          [...prev, {
-            id: ref.id,
+        const { data, error } = await supabase
+          .from('words')
+          .insert({
             word: row.word,
-            correctDefinition: row.correctDefinition,
+            correct_definition: row.correctDefinition,
             distractors: [row.distractor1, row.distractor2, row.distractor3],
             difficulty: row.difficulty,
-          }].sort((a, b) => a.word.localeCompare(b.word)),
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        setWords((prev) =>
+          [...prev, data as Word].sort((a, b) => a.word.localeCompare(b.word)),
         );
         added++;
       } catch {
@@ -430,7 +442,7 @@ export default function AdminPage() {
           <div className="ml-auto text-right">
             <p className="text-xs text-gray-500">Signed in as</p>
             <p className="text-sm font-medium text-violet-300 truncate max-w-[160px]">
-              {user.displayName}
+              {(user.user_metadata?.full_name as string) ?? user.email}
             </p>
           </div>
         </div>
@@ -509,7 +521,7 @@ export default function AdminPage() {
                       <tr key={w.id} className="hover:bg-gray-900/40 transition-colors group">
                         <td className="px-4 py-3 font-semibold text-white">{w.word}</td>
                         <td className="px-4 py-3 text-gray-300 max-w-[240px] truncate hidden md:table-cell">
-                          {w.correctDefinition}
+                          {w.correct_definition}
                         </td>
                         <td className="px-4 py-3 text-gray-500 text-xs hidden lg:table-cell">
                           <span className="line-clamp-1">{w.distractors.join(' · ')}</span>
@@ -735,22 +747,22 @@ export default function AdminPage() {
                       min={3}
                       max={Math.max(50, words.length)}
                       step={1}
-                      value={config.wordCount}
-                      onChange={(e) => setConfig((c) => ({ ...c, wordCount: Number(e.target.value) }))}
+                      value={config.word_count}
+                      onChange={(e) => setConfig((c) => ({ ...c, word_count: Number(e.target.value) }))}
                       className="flex-1 accent-violet-500"
                     />
                     <span className="text-2xl font-extrabold text-violet-300 tabular-nums w-12 text-right">
-                      {config.wordCount}
+                      {config.word_count}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs text-gray-600">
                     <span>3 (min)</span>
                     <span className="text-gray-500">
-                      Pool size: {words.filter((w) => w.difficulty >= config.difficultyMin && w.difficulty <= config.difficultyMax).length} eligible words
+                      Pool size: {words.filter((w) => w.difficulty >= config.difficulty_min && w.difficulty <= config.difficulty_max).length} eligible words
                     </span>
                     <span>{Math.max(50, words.length)} (max)</span>
                   </div>
-                  {config.wordCount > words.filter((w) => w.difficulty >= config.difficultyMin && w.difficulty <= config.difficultyMax).length && (
+                  {config.word_count > words.filter((w) => w.difficulty >= config.difficulty_min && w.difficulty <= config.difficulty_max).length && (
                     <p className="text-xs text-amber-400 bg-amber-950/40 border border-amber-800 rounded-lg px-3 py-2">
                       ⚠ Word count exceeds the eligible pool — all matching words will be used and the rest will be padded with repeats.
                     </p>
@@ -772,17 +784,17 @@ export default function AdminPage() {
                       min={3}
                       max={30}
                       step={1}
-                      value={config.timerSeconds}
-                      onChange={(e) => setConfig((c) => ({ ...c, timerSeconds: Number(e.target.value) }))}
+                      value={config.timer_seconds}
+                      onChange={(e) => setConfig((c) => ({ ...c, timer_seconds: Number(e.target.value) }))}
                       className="flex-1 accent-violet-500"
                     />
                     <span className="text-2xl font-extrabold text-violet-300 tabular-nums w-16 text-right">
-                      {config.timerSeconds}s
+                      {config.timer_seconds}s
                     </span>
                   </div>
                   <div className="flex justify-between text-xs text-gray-600">
                     <span>3s (fast)</span>
-                    <span className="text-gray-500">Max score/word: {100 + config.timerSeconds * 10} pts</span>
+                    <span className="text-gray-500">Max score/word: {100 + config.timer_seconds * 10} pts</span>
                     <span>30s (relaxed)</span>
                   </div>
                 </div>
@@ -802,20 +814,20 @@ export default function AdminPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-400">Minimum</span>
-                        <span className="text-sm font-bold text-emerald-400">{config.difficultyMin}</span>
+                        <span className="text-sm font-bold text-emerald-400">{config.difficulty_min}</span>
                       </div>
                       <input
                         type="range"
                         min={1}
                         max={10}
                         step={1}
-                        value={config.difficultyMin}
+                        value={config.difficulty_min}
                         onChange={(e) => {
                           const v = Number(e.target.value);
                           setConfig((c) => ({
                             ...c,
-                            difficultyMin: v,
-                            difficultyMax: Math.max(c.difficultyMax, v),
+                            difficulty_min: v,
+                            difficulty_max: Math.max(c.difficulty_max, v),
                           }));
                         }}
                         className="w-full accent-emerald-500"
@@ -825,20 +837,20 @@ export default function AdminPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-400">Maximum</span>
-                        <span className="text-sm font-bold text-red-400">{config.difficultyMax}</span>
+                        <span className="text-sm font-bold text-red-400">{config.difficulty_max}</span>
                       </div>
                       <input
                         type="range"
                         min={1}
                         max={10}
                         step={1}
-                        value={config.difficultyMax}
+                        value={config.difficulty_max}
                         onChange={(e) => {
                           const v = Number(e.target.value);
                           setConfig((c) => ({
                             ...c,
-                            difficultyMax: v,
-                            difficultyMin: Math.min(c.difficultyMin, v),
+                            difficulty_max: v,
+                            difficulty_min: Math.min(c.difficulty_min, v),
                           }));
                         }}
                         className="w-full accent-red-500"
@@ -851,8 +863,8 @@ export default function AdminPage() {
                     <div
                       className="absolute h-full bg-gradient-to-r from-emerald-500 to-red-500 rounded-full transition-all"
                       style={{
-                        left: `${((config.difficultyMin - 1) / 9) * 100}%`,
-                        right: `${((10 - config.difficultyMax) / 9) * 100}%`,
+                        left: `${((config.difficulty_min - 1) / 9) * 100}%`,
+                        right: `${((10 - config.difficulty_max) / 9) * 100}%`,
                       }}
                     />
                   </div>
@@ -860,7 +872,7 @@ export default function AdminPage() {
                     {[1,2,3,4,5,6,7,8,9,10].map((n) => (
                       <span
                         key={n}
-                        className={n >= config.difficultyMin && n <= config.difficultyMax ? 'text-gray-300 font-medium' : ''}
+                        className={n >= config.difficulty_min && n <= config.difficulty_max ? 'text-gray-300 font-medium' : ''}
                       >
                         {n}
                       </span>
@@ -871,7 +883,7 @@ export default function AdminPage() {
                   <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 pt-1">
                     {[1,2,3,4,5,6,7,8,9,10].map((n) => {
                       const count = words.filter((w) => w.difficulty === n).length;
-                      const active = n >= config.difficultyMin && n <= config.difficultyMax;
+                      const active = n >= config.difficulty_min && n <= config.difficulty_max;
                       return (
                         <div key={n} className={`text-center rounded-lg p-1.5 text-xs border ${
                           active
