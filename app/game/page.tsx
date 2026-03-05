@@ -2,15 +2,14 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, getDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { Trophy, RotateCcw, AlertCircle } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import GameBoard from '@/components/GameBoard';
 import CountdownTimer from '@/components/CountdownTimer';
-import type { Word } from '@/types';
-
-const TIMER_SECONDS = 10;
+import type { Word, GameConfig } from '@/types';
+import { DEFAULT_GAME_CONFIG } from '@/types';
 
 function shuffleArray<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -27,6 +26,11 @@ export default function GamePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
+  const [config, setConfig] = useState<GameConfig>(DEFAULT_GAME_CONFIG);
+  // timerSecondsRef always reflects the current config so callbacks don't stale-close over it
+  const timerSecondsRef = useRef(DEFAULT_GAME_CONFIG.timerSeconds);
+
+  const [restartKey, setRestartKey] = useState(0);
   const [words, setWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [choices, setChoices] = useState<string[]>([]);
@@ -34,7 +38,7 @@ export default function GamePage() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_GAME_CONFIG.timerSeconds);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [scoreSaved, setScoreSaved] = useState(false);
   const [savingScore, setSavingScore] = useState(false);
@@ -53,30 +57,54 @@ export default function GamePage() {
     setChoices(shuffleArray([w.correctDefinition, ...w.distractors]));
     setSelectedAnswer(null);
     setIsCorrect(null);
-    setTimeLeft(TIMER_SECONDS);
+    setTimeLeft(timerSecondsRef.current);
     hasAnsweredRef.current = false;
     setPhase('playing');
   }, []);
 
-  // ── Fetch words from Firestore ─────────────────────────────────────────────
+  // ── Fetch config + words from Firestore ─────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-    async function fetchWords() {
+    async function fetchAll() {
       try {
+        // Load config first so we can filter words correctly
+        let resolvedConfig = DEFAULT_GAME_CONFIG;
+        try {
+          const cfgSnap = await getDoc(doc(db, 'config', 'game'));
+          if (cfgSnap.exists()) {
+            resolvedConfig = { ...DEFAULT_GAME_CONFIG, ...(cfgSnap.data() as GameConfig) };
+          }
+        } catch {
+          // Config read failing is non-fatal — fall back to defaults
+        }
+        setConfig(resolvedConfig);
+        timerSecondsRef.current = resolvedConfig.timerSeconds;
+
+        // Fetch all words, filter by difficulty range, shuffle, then slice to wordCount
         const snap = await getDocs(collection(db, 'words'));
         if (snap.empty) {
-          setFetchError('No words found in Firestore. Run the seed script first.');
+          setFetchError('No words found. Ask an admin to add some first.');
           return;
         }
-        const data: Word[] = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Word));
-        setWords(shuffleArray(data));
+        const allWords: Word[] = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Word));
+
+        const eligible = allWords.filter(
+          (w) => w.difficulty >= resolvedConfig.difficultyMin && w.difficulty <= resolvedConfig.difficultyMax,
+        );
+
+        // If eligible pool is smaller than wordCount, use all eligible words
+        const pool = eligible.length > 0 ? eligible : allWords;
+        const shuffled = shuffleArray(pool);
+        const selected = shuffled.slice(0, resolvedConfig.wordCount);
+
+        setWords(selected);
       } catch (err) {
         console.error('Firestore fetch error:', err);
         setFetchError('Could not load words. Check your Firebase config.');
       }
     }
-    fetchWords();
-  }, [user]);
+    fetchAll();
+  }, [user, restartKey]);
 
   // ── Start game once words are loaded (also handles restart) ────────────────
   useEffect(() => {
@@ -151,13 +179,12 @@ export default function GamePage() {
     saveScore();
   }, [phase, scoreSaved, user, score]);
 
-  // ── Restart ────────────────────────────────────────────────────────────────
   function restart() {
     setScore(0);
     setScoreSaved(false);
     setPhase('loading');
-    // Re-shuffle triggers the words useEffect → startWord(0, ...)
-    setWords((prev) => shuffleArray([...prev]));
+    setWords([]);
+    setRestartKey((k) => k + 1);
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -179,7 +206,7 @@ export default function GamePage() {
   }
 
   if (phase === 'finished') {
-    const maxScore = words.length * (100 + TIMER_SECONDS * 10);
+    const maxScore = words.length * (100 + config.timerSeconds * 10);
     const pct = Math.round((score / maxScore) * 100);
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-64px)] gap-6 px-4 text-center">
@@ -232,7 +259,7 @@ export default function GamePage() {
           Score:{' '}
           <span className="text-white font-bold text-lg tabular-nums">{score}</span>
         </div>
-        <CountdownTimer timeLeft={timeLeft} totalTime={TIMER_SECONDS} />
+        <CountdownTimer timeLeft={timeLeft} totalTime={config.timerSeconds} />
       </div>
 
       <GameBoard

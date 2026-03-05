@@ -18,3 +18,25 @@ export interface LeaderboardEntry {
   score: number;
   timestamp: Date;
 }
+
+/**
+ * Game configuration stored in Firestore `config/game`.
+ * Written exclusively by admins; read by all authenticated players.
+ */
+export interface GameConfig {
+  /** Number of words per round. */
+  wordCount: number;
+  /** Seconds per word countdown. */
+  timerSeconds: number;
+  /** Only include words with difficulty >= this value. */
+  difficultyMin: number;
+  /** Only include words with difficulty <= this value. */
+  difficultyMax: number;
+}
+
+export const DEFAULT_GAME_CONFIG: GameConfig = {
+  wordCount: 10,
+  timerSeconds: 10,
+  difficultyMin: 1,
+  difficultyMax: 10,
+};

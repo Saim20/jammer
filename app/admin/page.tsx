@@ -8,6 +8,7 @@ import {
   addDoc,
   deleteDoc,
   setDoc,
+  getDoc,
   doc,
   query,
   orderBy,
@@ -27,14 +28,19 @@ import {
   ChevronUp,
   ChevronDown,
   Loader2,
+  Save,
+  Timer,
+  Hash,
+  Gauge,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
-import type { Word } from '@/types';
+import type { Word, GameConfig } from '@/types';
+import { DEFAULT_GAME_CONFIG } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'words' | 'add' | 'csv';
+type Tab = 'words' | 'add' | 'csv' | 'settings';
 
 interface WordDraft {
   word: string;
@@ -179,6 +185,13 @@ export default function AdminPage() {
   const [csvError, setCsvError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Game config state ─────────────────────────────────────────────────────
+  const [config, setConfig] = useState<GameConfig>(DEFAULT_GAME_CONFIG);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configSaved, setConfigSaved] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+
   // ── Auth guard ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!authLoading && (!user || !isAdmin)) router.replace('/');
@@ -200,6 +213,41 @@ export default function AdminPage() {
   useEffect(() => {
     if (user && isAdmin) fetchWords();
   }, [user, isAdmin, fetchWords]);
+
+  // ── Fetch game config ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+    async function fetchConfig() {
+      setConfigLoading(true);
+      try {
+        const snap = await getDoc(doc(db, 'config', 'game'));
+        if (snap.exists()) {
+          setConfig({ ...DEFAULT_GAME_CONFIG, ...(snap.data() as GameConfig) });
+        }
+      } catch (err) {
+        console.error('Failed to load config:', err);
+      } finally {
+        setConfigLoading(false);
+      }
+    }
+    fetchConfig();
+  }, [user, isAdmin]);
+
+  async function saveConfig() {
+    setConfigSaving(true);
+    setConfigError(null);
+    setConfigSaved(false);
+    try {
+      await setDoc(doc(db, 'config', 'game'), config);
+      setConfigSaved(true);
+      setTimeout(() => setConfigSaved(false), 3000);
+    } catch (err) {
+      console.error(err);
+      setConfigError('Failed to save settings. Check your connection.');
+    } finally {
+      setConfigSaving(false);
+    }
+  }
 
   // ── Filtered / sorted words ───────────────────────────────────────────────
   const displayedWords = words
@@ -395,8 +443,8 @@ export default function AdminPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-gray-900 rounded-xl p-1 w-fit">
-          {(['words', 'add', 'csv'] as Tab[]).map((t) => (
+        <div className="flex flex-wrap gap-1 bg-gray-900 rounded-xl p-1 w-fit">
+          {(['words', 'add', 'csv', 'settings'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -406,7 +454,10 @@ export default function AdminPage() {
                   : 'text-gray-400 hover:text-white'
               }`}
             >
-              {t === 'words' ? 'Words' : t === 'add' ? 'Add Word' : 'CSV Upload'}
+              {t === 'words' ? 'Words'
+                : t === 'add' ? 'Add Word'
+                : t === 'csv' ? 'CSV Upload'
+                : '⚙ Settings'}
             </button>
           ))}
         </div>
@@ -653,6 +704,210 @@ export default function AdminPage() {
                   </table>
                 </div>
               </div>
+            )}
+          </section>
+        )}
+        {/* ── Tab: Settings ─────────────────────────────────────────────────── */}
+        {tab === 'settings' && (
+          <section className="max-w-2xl space-y-8">
+            <p className="text-sm text-gray-400">
+              These settings apply globally to every new game session. Changes take effect immediately for all players.
+            </p>
+
+            {configLoading ? (
+              <div className="flex justify-center py-16">
+                <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* Word count */}
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Hash className="w-4 h-4 text-violet-400" />
+                    <h3 className="font-semibold text-white text-sm">Words per Round</h3>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    How many words each player is quizzed on in a single game. Words are drawn randomly from the eligible pool (filtered by difficulty below).
+                  </p>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      min={3}
+                      max={Math.max(50, words.length)}
+                      step={1}
+                      value={config.wordCount}
+                      onChange={(e) => setConfig((c) => ({ ...c, wordCount: Number(e.target.value) }))}
+                      className="flex-1 accent-violet-500"
+                    />
+                    <span className="text-2xl font-extrabold text-violet-300 tabular-nums w-12 text-right">
+                      {config.wordCount}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>3 (min)</span>
+                    <span className="text-gray-500">
+                      Pool size: {words.filter((w) => w.difficulty >= config.difficultyMin && w.difficulty <= config.difficultyMax).length} eligible words
+                    </span>
+                    <span>{Math.max(50, words.length)} (max)</span>
+                  </div>
+                  {config.wordCount > words.filter((w) => w.difficulty >= config.difficultyMin && w.difficulty <= config.difficultyMax).length && (
+                    <p className="text-xs text-amber-400 bg-amber-950/40 border border-amber-800 rounded-lg px-3 py-2">
+                      ⚠ Word count exceeds the eligible pool — all matching words will be used and the rest will be padded with repeats.
+                    </p>
+                  )}
+                </div>
+
+                {/* Timer */}
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Timer className="w-4 h-4 text-violet-400" />
+                    <h3 className="font-semibold text-white text-sm">Timer per Word (seconds)</h3>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    How long players have to answer each word. Scoring formula: 100&nbsp;+&nbsp;(timeLeft&nbsp;×&nbsp;10) pts per correct answer, so max per word = 100&nbsp;+&nbsp;(timer&nbsp;×&nbsp;10).
+                  </p>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      min={3}
+                      max={30}
+                      step={1}
+                      value={config.timerSeconds}
+                      onChange={(e) => setConfig((c) => ({ ...c, timerSeconds: Number(e.target.value) }))}
+                      className="flex-1 accent-violet-500"
+                    />
+                    <span className="text-2xl font-extrabold text-violet-300 tabular-nums w-16 text-right">
+                      {config.timerSeconds}s
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>3s (fast)</span>
+                    <span className="text-gray-500">Max score/word: {100 + config.timerSeconds * 10} pts</span>
+                    <span>30s (relaxed)</span>
+                  </div>
+                </div>
+
+                {/* Difficulty range */}
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Gauge className="w-4 h-4 text-violet-400" />
+                    <h3 className="font-semibold text-white text-sm">Difficulty Filter</h3>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Only words within this difficulty band will appear in the game. Use this to create themed sessions (e.g. beginners: 1–4, advanced: 7–10).
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Min */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Minimum</span>
+                        <span className="text-sm font-bold text-emerald-400">{config.difficultyMin}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={config.difficultyMin}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setConfig((c) => ({
+                            ...c,
+                            difficultyMin: v,
+                            difficultyMax: Math.max(c.difficultyMax, v),
+                          }));
+                        }}
+                        className="w-full accent-emerald-500"
+                      />
+                    </div>
+                    {/* Max */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Maximum</span>
+                        <span className="text-sm font-bold text-red-400">{config.difficultyMax}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={config.difficultyMax}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setConfig((c) => ({
+                            ...c,
+                            difficultyMax: v,
+                            difficultyMin: Math.min(c.difficultyMin, v),
+                          }));
+                        }}
+                        className="w-full accent-red-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Visual difficulty bar */}
+                  <div className="relative h-3 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="absolute h-full bg-gradient-to-r from-emerald-500 to-red-500 rounded-full transition-all"
+                      style={{
+                        left: `${((config.difficultyMin - 1) / 9) * 100}%`,
+                        right: `${((10 - config.difficultyMax) / 9) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600">
+                    {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+                      <span
+                        key={n}
+                        className={n >= config.difficultyMin && n <= config.difficultyMax ? 'text-gray-300 font-medium' : ''}
+                      >
+                        {n}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Per-difficulty breakdown */}
+                  <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 pt-1">
+                    {[1,2,3,4,5,6,7,8,9,10].map((n) => {
+                      const count = words.filter((w) => w.difficulty === n).length;
+                      const active = n >= config.difficultyMin && n <= config.difficultyMax;
+                      return (
+                        <div key={n} className={`text-center rounded-lg p-1.5 text-xs border ${
+                          active
+                            ? 'bg-violet-900/40 border-violet-700 text-violet-200'
+                            : 'bg-gray-800/40 border-gray-800 text-gray-600'
+                        }`}>
+                          <div className="font-bold">{count}</div>
+                          <div className="text-[10px] opacity-60">d{n}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Save button */}
+                {configError && (
+                  <div className="flex items-center gap-2 text-red-400 text-sm bg-red-950/40 border border-red-800 rounded-xl px-4 py-3">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {configError}
+                  </div>
+                )}
+                {configSaved && (
+                  <div className="flex items-center gap-2 text-emerald-400 text-sm bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-3">
+                    <Check className="w-4 h-4 shrink-0" />
+                    Settings saved! New game sessions will use these values.
+                  </div>
+                )}
+                <button
+                  onClick={saveConfig}
+                  disabled={configSaving}
+                  className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-xl transition-colors"
+                >
+                  {configSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {configSaving ? 'Saving…' : 'Save Settings'}
+                </button>
+              </>
             )}
           </section>
         )}

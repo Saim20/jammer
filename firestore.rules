@@ -50,6 +50,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── config collection ──────────────────────────────────────────────────────
+    // Stores game-wide settings (e.g. config/game).
+    // All authenticated players may read (game page needs these values).
+    // Only admins may write.
+    match /config/{docId} {
+      allow read:  if isAuthed();
+      allow write: if isAdmin();
+    }
+
     // ── words collection ───────────────────────────────────────────────────────
     // Authenticated players may read. Admins may create, update, and delete.
     match /words/{wordId} {
