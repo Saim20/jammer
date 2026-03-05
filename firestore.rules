@@ -1,0 +1,63 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ───────────────────────────────────────────────────────
+
+    // Is the incoming request from a signed-in user?
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    // Does the incoming document's userId field match the caller's UID?
+    function isOwner() {
+      return request.resource.data.userId == request.auth.uid;
+    }
+
+    // Validate leaderboard entry shape on create:
+    //   • All required fields are present
+    //   • userId matches the caller (no spoofing other players)
+    //   • score is a non-negative integer
+    //   • userName is a non-empty string  ≤ 100 chars
+    //   • userPhoto is a string (may be empty)
+    //   • timestamp is a server timestamp (set via serverTimestamp())
+    function validLeaderboardEntry() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['userId', 'userName', 'userPhoto', 'score', 'timestamp'])
+          && d.userId   is string
+          && d.userId   == request.auth.uid
+          && d.userName is string
+          && d.userName.size() > 0
+          && d.userName.size() <= 100
+          && d.userPhoto is string
+          && d.score    is int
+          && d.score    >= 0
+          && d.timestamp == request.time;
+    }
+
+    // ── words collection ───────────────────────────────────────────────────────
+    // Seeded exclusively by the Admin SDK (service account).
+    // Authenticated players may read; no client-side writes ever.
+    match /words/{wordId} {
+      allow read:  if isAuthed();
+      allow write: if false;
+    }
+
+    // ── leaderboard collection ─────────────────────────────────────────────────
+    // Authenticated players may read all entries (for the top-10 view).
+    // A player may only CREATE a new entry on their own behalf with valid data.
+    // Nobody may update or delete entries from the client — scores are immutable.
+    match /leaderboard/{entryId} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed() && isOwner() && validLeaderboardEntry();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── Catch-all: deny everything else ───────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
