@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { BookOpen, Trophy, LogOut } from 'lucide-react';
+import { BookOpen, Trophy, LogOut, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
 
   return (
     <nav className="sticky top-0 z-50 border-b border-gray-800 bg-gray-950/80 backdrop-blur-md">
@@ -28,6 +28,16 @@ export default function Navbar() {
             <Trophy className="w-4 h-4 text-yellow-400" />
             <span className="hidden sm:inline">Leaderboard</span>
           </Link>
+
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-violet-300 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+            >
+              <ShieldCheck className="w-4 h-4 text-violet-400" />
+              <span className="hidden sm:inline">Admin</span>
+            </Link>
+          )}
 
           {user && (
             <>

@@ -10,6 +10,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Is the caller an admin? (presence of their UID doc in the admins collection)
+    function isAdmin() {
+      return isAuthed() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
     // Does the incoming document's userId field match the caller's UID?
     function isOwner() {
       return request.resource.data.userId == request.auth.uid;
@@ -36,12 +41,22 @@ service cloud.firestore {
           && d.timestamp == request.time;
     }
 
-    // ── words collection ───────────────────────────────────────────────────────
-    // Seeded exclusively by the Admin SDK (service account).
-    // Authenticated players may read; no client-side writes ever.
-    match /words/{wordId} {
-      allow read:  if isAuthed();
+    // ── admins collection ──────────────────────────────────────────────────────
+    // Presence of a document (UID as ID) grants admin rights.
+    // Admins can read their own entry. Nobody writes from the client.
+    // Add/remove admins directly via Firebase Console or Admin SDK.
+    match /admins/{userId} {
+      allow read:  if isAuthed() && request.auth.uid == userId;
       allow write: if false;
+    }
+
+    // ── words collection ───────────────────────────────────────────────────────
+    // Authenticated players may read. Admins may create, update, and delete.
+    match /words/{wordId} {
+      allow read:   if isAuthed();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     // ── leaderboard collection ─────────────────────────────────────────────────

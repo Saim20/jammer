@@ -5,9 +5,9 @@ Next.js 16 (App Router) · TypeScript (strict) · Tailwind CSS v4 · Firebase 12
 
 ## Project layout
 ```
-app/            # Routes: / (landing), /game, /leaderboard
+app/            # Routes: / (landing), /game, /admin, /leaderboard
 components/     # Pure UI: GameBoard, CountdownTimer, Navbar
-context/        # AuthContext — single source of Firebase user state
+context/        # AuthContext — single source of Firebase user state + isAdmin flag
 lib/firebase.ts # Firebase singleton (auth, db, googleProvider)
 types/index.ts  # Word and LeaderboardEntry interfaces
 scripts/        # Admin SDK tooling (seed-firestore.mjs)
@@ -53,8 +53,32 @@ The Navbar is `h-16` (64 px). Full-page sections must use `min-h-[calc(100vh-64p
 
 | Collection | Client reads | Client writes | Who writes |
 |---|---|---|---|
-| `words` | ✅ auth only | ❌ never | Admin SDK (`scripts/seed-firestore.mjs`) |
+| `words` | ✅ auth only | ✅ admin only (CRUD) | Admin dashboard UI or seed script |
+| `admins` | ✅ own doc only | ❌ never | Firebase Console or Admin SDK manually |
 | `leaderboard` | ✅ auth only | create only (own entry) | `app/game/page.tsx` via `addDoc` + `serverTimestamp()` |
+
+## Admin system
+
+### How it works
+- Presence of a document with the user's UID in the `admins` Firestore collection grants admin rights.
+- `AuthContext` reads this on every sign-in and exposes `isAdmin: boolean`.
+- The `Navbar` shows an **Admin** link only when `isAdmin` is true.
+- `app/admin/page.tsx` redirects non-admins to `/` — double-guarded by Firestore rules.
+
+### Granting admin access
+In the Firebase Console → Firestore → `admins` collection, create a document whose **ID is the user's UID**. No fields are required; presence is sufficient.
+
+### Admin features (app/admin/page.tsx)
+- **Words tab** — searchable, sortable table with inline edit (modal) and delete (confirm modal)
+- **Add Word tab** — manual form: word, correctDefinition, 3 distractors, difficulty 1–10
+- **CSV Upload tab** — upload a `.csv`, preview with per-row validation, batch import
+
+### CSV format
+```
+word,correctDefinition,distractor1,distractor2,distractor3,difficulty
+Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",6
+```
+A **Download Template** button in the CSV tab provides a ready-to-fill example file.
 
 ## Developer workflows
 
