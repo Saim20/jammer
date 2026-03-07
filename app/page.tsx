@@ -34,7 +34,7 @@ export default function LandingPage() {
       {/* Hero */}
       <div className="mb-6 flex items-center gap-3">
         <BookOpen className="w-14 h-14 text-violet-400 drop-shadow-[0_0_24px_rgba(167,139,250,0.5)]" />
-        <h1 className="text-6xl sm:text-7xl font-extrabold bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
+        <h1 className="text-6xl sm:text-7xl font-extrabold bg-linear-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
           Vocab Jam
         </h1>
       </div>

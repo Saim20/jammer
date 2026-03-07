@@ -658,7 +658,7 @@ export default function AdminPage() {
           </div>
           <div className="ml-auto text-right">
             <p className="text-xs text-gray-500">Signed in as</p>
-            <p className="text-sm font-medium text-violet-300 truncate max-w-[160px]">
+            <p className="text-sm font-medium text-violet-300 truncate max-w-40">
               {profile?.name ?? user.email}
             </p>
           </div>
@@ -696,7 +696,7 @@ export default function AdminPage() {
         {tab === 'words' && (
           <section className="space-y-4">
             <div className="flex gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
+              <div className="relative flex-1 min-w-50">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
                   type="text"
@@ -738,7 +738,7 @@ export default function AdminPage() {
                     {displayedWords.map((w) => (
                       <tr key={w.id} className="hover:bg-gray-900/40 transition-colors group">
                         <td className="px-4 py-3 font-semibold text-white">{w.word}</td>
-                        <td className="px-4 py-3 text-gray-300 max-w-[240px] truncate hidden md:table-cell">
+                        <td className="px-4 py-3 text-gray-300 max-w-60 truncate hidden md:table-cell">
                           {w.correct_definition}
                         </td>
                         <td className="px-4 py-3 text-gray-500 text-xs hidden lg:table-cell">
@@ -963,7 +963,7 @@ export default function AdminPage() {
                         >
                           <td className="px-3 py-2 text-gray-600">{i + 1}</td>
                           <td className="px-3 py-2 font-medium text-white">{row.word || <span className="text-red-400 italic">empty</span>}</td>
-                          <td className="px-3 py-2 text-gray-400 max-w-[200px] truncate hidden sm:table-cell">
+                          <td className="px-3 py-2 text-gray-400 max-w-50 truncate hidden sm:table-cell">
                             {row.correctDefinition || <span className="text-red-400 italic">empty</span>}
                           </td>
                           <td className="px-3 py-2">
@@ -1260,7 +1260,7 @@ export default function AdminPage() {
                   {/* Visual difficulty bar */}
                   <div className="relative h-3 bg-gray-800 rounded-full overflow-hidden">
                     <div
-                      className="absolute h-full bg-gradient-to-r from-emerald-500 to-red-500 rounded-full transition-all"
+                      className="absolute h-full bg-linear-to-r from-emerald-500 to-red-500 rounded-full transition-all"
                       style={{
                         left: `${((config.difficulty_min - 1) / 9) * 100}%`,
                         right: `${((10 - config.difficulty_max) / 9) * 100}%`,

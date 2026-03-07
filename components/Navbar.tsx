@@ -14,7 +14,7 @@ export default function Navbar() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 font-bold text-xl">
           <BookOpen className="w-6 h-6 text-violet-400" />
-          <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+          <span className="bg-linear-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
             Vocab Jam
           </span>
         </Link>
@@ -75,7 +75,7 @@ export default function Navbar() {
                     {(profile?.name ?? user?.email ?? 'U')[0]?.toUpperCase()}
                   </div>
                 )}
-                <span className="hidden sm:block text-sm text-gray-300 max-w-[120px] truncate">
+                <span className="hidden sm:block text-sm text-gray-300 max-w-30 truncate">
                   {profile?.name ?? user?.email}
                 </span>
               </div>

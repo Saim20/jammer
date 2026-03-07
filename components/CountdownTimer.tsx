@@ -26,7 +26,7 @@ export default function CountdownTimer({
         : 'text-red-400';
 
   return (
-    <div className="flex items-center gap-3 w-full max-w-[200px]">
+    <div className="flex items-center gap-3 w-full max-w-50">
       {/* Numeric countdown */}
       <span
         className={`text-2xl font-mono font-black min-w-[2ch] text-right tabular-nums transition-colors ${textColor} ${timeLeft <= 3 ? 'animate-pulse' : ''}`}

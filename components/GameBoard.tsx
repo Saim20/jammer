@@ -77,7 +77,7 @@ export default function GameBoard({
         <p className="text-xs font-semibold uppercase tracking-widest text-violet-400 mb-4">
           What does this word mean?
         </p>
-        <h2 className="text-5xl sm:text-6xl font-extrabold tracking-tight bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent">
+        <h2 className="text-5xl sm:text-6xl font-extrabold tracking-tight bg-linear-to-br from-white to-gray-400 bg-clip-text text-transparent">
           {word.word}
         </h2>
         {/* Difficulty dots */}
