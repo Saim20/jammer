@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { BookOpen, Zap, RefreshCw, Target, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { CATEGORY_META, WORD_CATEGORIES } from '@/types';
+import { CATEGORY_META, WORD_CATEGORIES, difficultyToCategory } from '@/types';
 import type { WordCategory, UserCategoryProgress } from '@/types';
 
 export default function LearnPage() {
@@ -62,9 +62,7 @@ export default function LearnPage() {
         const totals = {} as Record<WordCategory, number>;
         for (const cat of WORD_CATEGORIES) totals[cat] = 0;
         for (const row of wordData ?? []) {
-          const d = row.difficulty as number;
-          const cat: WordCategory =
-            d <= 3 ? 'survival' : d <= 6 ? 'social' : d <= 8 ? 'professional' : 'eloquent';
+          const cat = difficultyToCategory(row.difficulty as number);
           totals[cat]++;
         }
         setCategoryTotals(totals);

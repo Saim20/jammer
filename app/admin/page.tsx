@@ -747,9 +747,14 @@ export default function AdminPage() {
                         <td className="px-4 py-3">
                           <div className="flex flex-col gap-0.5">
                             <DifficultyBadge value={w.difficulty} />
-                            <span className="text-[10px] text-gray-600">
-                              {CATEGORY_META[difficultyToCategory(w.difficulty)].emoji} {CATEGORY_META[difficultyToCategory(w.difficulty)].label}
-                            </span>
+                            {(() => {
+                              const cat = difficultyToCategory(w.difficulty);
+                              return (
+                                <span className="text-[10px] text-gray-600">
+                                  {CATEGORY_META[cat].emoji} {CATEGORY_META[cat].label}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
