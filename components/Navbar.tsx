@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { BookOpen, Trophy, LogOut, ShieldCheck } from 'lucide-react';
+import { BookOpen, Trophy, LogOut, ShieldCheck, GraduationCap } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 export default function Navbar() {
@@ -21,6 +21,16 @@ export default function Navbar() {
 
         {/* Right side */}
         <div className="flex items-center gap-1">
+          {user && (
+            <Link
+              href="/learn"
+              className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+            >
+              <GraduationCap className="w-4 h-4 text-violet-400" />
+              <span className="hidden sm:inline">Learn</span>
+            </Link>
+          )}
+
           <Link
             href="/leaderboard"
             className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"

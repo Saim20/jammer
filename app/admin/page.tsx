@@ -24,12 +24,12 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import type { Word, GameConfig } from '@/types';
-import { DEFAULT_GAME_CONFIG } from '@/types';
+import type { Word, GameConfig, FlashcardSet, WordCategory } from '@/types';
+import { DEFAULT_GAME_CONFIG, CATEGORY_META, WORD_CATEGORIES } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'words' | 'add' | 'csv' | 'settings';
+type Tab = 'words' | 'add' | 'csv' | 'sets' | 'settings';
 
 interface WordDraft {
   word: string;
@@ -38,6 +38,8 @@ interface WordDraft {
   distractor2: string;
   distractor3: string;
   difficulty: number;
+  category: WordCategory | '';
+  set_id: string;
 }
 
 const EMPTY_DRAFT: WordDraft = {
@@ -47,6 +49,8 @@ const EMPTY_DRAFT: WordDraft = {
   distractor2: '',
   distractor3: '',
   difficulty: 5,
+  category: '',
+  set_id: '',
 };
 
 interface CSVRow {
@@ -56,6 +60,8 @@ interface CSVRow {
   distractor2: string;
   distractor3: string;
   difficulty: number;
+  category: WordCategory | '';
+  set_name: string;
   _valid: boolean;
   _error?: string;
 }
@@ -96,8 +102,10 @@ function parseCSV(text: string): CSVRow[] {
   // Accept headers case-insensitively, ignore header row
   return lines.slice(1).map((line) => {
     const cols = parseCSVLine(line);
-    const [word, correctDefinition, distractor1, distractor2, distractor3, diffStr] = cols;
+    const [word, correctDefinition, distractor1, distractor2, distractor3, diffStr, categoryStr, setNameStr] = cols;
     const difficulty = parseInt(diffStr ?? '', 10);
+    const category = (categoryStr ?? '').trim().toLowerCase() as WordCategory | '';
+    const validCategories: string[] = ['survival', 'social', 'professional', 'eloquent'];
 
     const missing: string[] = [];
     if (!word) missing.push('word');
@@ -109,6 +117,11 @@ function parseCSV(text: string): CSVRow[] {
     const diffValid = !isNaN(difficulty) && difficulty >= 1 && difficulty <= 10;
     if (!diffValid) missing.push('difficulty (1–10)');
 
+    // category is optional but must be valid if provided
+    if (category && !validCategories.includes(category)) {
+      missing.push(`category must be one of: ${validCategories.join(', ')}`);
+    }
+
     const _valid = missing.length === 0;
     return {
       word: word ?? '',
@@ -117,6 +130,8 @@ function parseCSV(text: string): CSVRow[] {
       distractor2: distractor2 ?? '',
       distractor3: distractor3 ?? '',
       difficulty: diffValid ? difficulty : 5,
+      category: (category && validCategories.includes(category) ? category : '') as WordCategory | '',
+      set_name: (setNameStr ?? '').trim(),
       _valid,
       _error: _valid ? undefined : `Missing/invalid: ${missing.join(', ')}`,
     };
@@ -129,12 +144,14 @@ function draftToRow(d: WordDraft) {
     correct_definition: d.correctDefinition.trim(),
     distractors: [d.distractor1.trim(), d.distractor2.trim(), d.distractor3.trim()],
     difficulty: d.difficulty,
+    category: d.category || null,
+    set_id: d.set_id || null,
   };
 }
 
 const CSV_TEMPLATE =
-  'word,correctDefinition,distractor1,distractor2,distractor3,difficulty\n' +
-  'Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",6\n';
+  'word,correctDefinition,distractor1,distractor2,distractor3,difficulty,category,set_name\n' +
+  'Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",6,eloquent,"Literary Devices"\n';
 
 // ── Embedding helpers ─────────────────────────────────────────────────────────
 // These are module-level (no component state) so they can be called anywhere.
@@ -224,6 +241,17 @@ export default function AdminPage() {
   const [configSaved, setConfigSaved] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
 
+  // ── Sets state ────────────────────────────────────────────────────────────
+  const [sets, setSets] = useState<FlashcardSet[]>([]);
+  const [setsLoading, setSetsLoading] = useState(false);
+  const [setDraft, setSetDraft] = useState<{ name: string; description: string; category: WordCategory | ''; display_order: number }>({
+    name: '', description: '', category: '', display_order: 0,
+  });
+  const [setSaving, setSetSaving] = useState(false);
+  const [setError, setSetError] = useState<string | null>(null);
+  const [setSuccess, setSetSuccess] = useState(false);
+  const [deletingSetId, setDeletingSetId] = useState<string | null>(null);
+
   // ── Auth guard ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!authLoading && (!user || !isAdmin)) router.replace('/');
@@ -235,7 +263,7 @@ export default function AdminPage() {
     try {
       const { data, error } = await supabase
         .from('words')
-        .select('id, word, correct_definition, distractors, difficulty, created_at, updated_at')
+        .select('id, word, correct_definition, distractors, difficulty, category, set_id, created_at, updated_at')
         .order('word');
       if (error) throw error;
       setWords((data ?? []) as Word[]);
@@ -246,9 +274,30 @@ export default function AdminPage() {
     }
   }, []);
 
+  // ── Fetch sets ────────────────────────────────────────────────────────────
+  const fetchSets = useCallback(async () => {
+    setSetsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('flashcard_sets')
+        .select('*')
+        .order('category')
+        .order('display_order');
+      if (error) throw error;
+      setSets((data ?? []) as FlashcardSet[]);
+    } catch (err) {
+      console.error('Failed to fetch sets:', err);
+    } finally {
+      setSetsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (user && isAdmin) fetchWords();
-  }, [user, isAdmin, fetchWords]);
+    if (user && isAdmin) {
+      fetchWords();
+      fetchSets();
+    }
+  }, [user, isAdmin, fetchWords, fetchSets]);
 
   // ── Fetch game config ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -322,6 +371,8 @@ export default function AdminPage() {
       distractor2: w.distractors[1] ?? '',
       distractor3: w.distractors[2] ?? '',
       difficulty: w.difficulty,
+      category: w.category ?? '',
+      set_id: w.set_id ?? '',
     });
     setEditError(null);
   }
@@ -422,6 +473,49 @@ export default function AdminPage() {
     }
   }
 
+  // ── Save set ──────────────────────────────────────────────────────────────
+  async function handleSaveSet() {
+    if (!setDraft.name.trim()) { setSetError('Name is required.'); return; }
+    if (!setDraft.category) { setSetError('Category is required.'); return; }
+    setSetSaving(true);
+    setSetError(null);
+    setSetSuccess(false);
+    try {
+      const { data, error } = await supabase
+        .from('flashcard_sets')
+        .insert({
+          name: setDraft.name.trim(),
+          description: setDraft.description.trim() || null,
+          category: setDraft.category,
+          display_order: setDraft.display_order,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setSets((prev) => [...prev, data as FlashcardSet].sort((a, b) => a.category.localeCompare(b.category) || a.display_order - b.display_order));
+      setSetDraft({ name: '', description: '', category: '', display_order: 0 });
+      setSetSuccess(true);
+      setTimeout(() => setSetSuccess(false), 3000);
+    } catch (err) {
+      console.error(err);
+      setSetError('Failed to save set.');
+    } finally {
+      setSetSaving(false);
+    }
+  }
+
+  async function confirmDeleteSet(id: string) {
+    try {
+      const { error } = await supabase.from('flashcard_sets').delete().eq('id', id);
+      if (error) throw error;
+      setSets((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error('Delete set failed:', err);
+    } finally {
+      setDeletingSetId(null);
+    }
+  }
+
   // ── CSV upload ────────────────────────────────────────────────────────────
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -456,8 +550,43 @@ export default function AdminPage() {
     let failed = 0;
     const inserted: { id: string; word: string; correct_definition: string }[] = [];
 
+    // Build a set-name → id cache to avoid duplicate lookups/creates
+    const setCache = new Map<string, string>(sets.map((s) => [`${s.category}::${s.name}`, s.id]));
+
     for (const row of validRows) {
       try {
+        // Resolve set_id from set_name + category (auto-create if needed)
+        let resolvedSetId: string | null = null;
+        if (row.set_name && row.category) {
+          const cacheKey = `${row.category}::${row.set_name}`;
+          if (setCache.has(cacheKey)) {
+            resolvedSetId = setCache.get(cacheKey)!;
+          } else {
+            // Try to find existing set
+            const { data: existingSet } = await supabase
+              .from('flashcard_sets')
+              .select('id')
+              .eq('category', row.category)
+              .eq('name', row.set_name)
+              .maybeSingle();
+            if (existingSet) {
+              resolvedSetId = existingSet.id;
+            } else {
+              // Create new set
+              const { data: newSet, error: setErr } = await supabase
+                .from('flashcard_sets')
+                .insert({ name: row.set_name, category: row.category, display_order: 0 })
+                .select()
+                .single();
+              if (!setErr && newSet) {
+                resolvedSetId = (newSet as FlashcardSet).id;
+                setSets((prev) => [...prev, newSet as FlashcardSet]);
+              }
+            }
+            if (resolvedSetId) setCache.set(cacheKey, resolvedSetId);
+          }
+        }
+
         const { data, error } = await supabase
           .from('words')
           .insert({
@@ -465,6 +594,8 @@ export default function AdminPage() {
             correct_definition: row.correctDefinition,
             distractors: [row.distractor1, row.distractor2, row.distractor3],
             difficulty: row.difficulty,
+            category: row.category || null,
+            set_id: resolvedSetId,
           })
           .select()
           .single();
@@ -555,7 +686,7 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-1 bg-gray-900 rounded-xl p-1 w-fit">
-          {(['words', 'add', 'csv', 'settings'] as Tab[]).map((t) => (
+          {(['words', 'add', 'csv', 'sets', 'settings'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -568,6 +699,7 @@ export default function AdminPage() {
               {t === 'words' ? 'Words'
                 : t === 'add' ? 'Add Word'
                 : t === 'csv' ? 'CSV Upload'
+                : t === 'sets' ? 'Flashcard Sets'
                 : '⚙ Settings'}
             </button>
           ))}
@@ -670,6 +802,7 @@ export default function AdminPage() {
               error={addError}
               submitLabel="Add Word"
               submitIcon={<Plus className="w-4 h-4" />}
+              sets={sets}
             />
             {addSuccess && (
               <div className="flex items-center gap-2 text-emerald-400 text-sm bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-3">
@@ -706,6 +839,9 @@ export default function AdminPage() {
                 <p className="text-xs text-gray-500">
                   Required columns:{' '}
                   <code className="text-violet-400">word, correctDefinition, distractor1, distractor2, distractor3, difficulty</code>
+                  <br />
+                  Optional columns:{' '}
+                  <code className="text-violet-400">category (survival/social/professional/eloquent), set_name</code>
                 </p>
               </div>
               <button
@@ -855,6 +991,135 @@ export default function AdminPage() {
             )}
           </section>
         )}
+        {/* ── Tab: Flashcard Sets ─────────────────────────────────────────────── */}
+        {tab === 'sets' && (
+          <section className="space-y-6">
+            <p className="text-sm text-gray-400">
+              Create named groups of words within each learning category. Words assigned to a set appear in the corresponding flashcard deck.
+            </p>
+
+            {/* Create new set form */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4">
+              <h3 className="font-semibold text-white text-sm">New Set</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label>Set Name</Label>
+                  <input
+                    type="text"
+                    value={setDraft.name}
+                    onChange={(e) => setSetDraft((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="e.g. Travel & Transport"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <Label>Category</Label>
+                  <select
+                    value={setDraft.category}
+                    onChange={(e) => setSetDraft((d) => ({ ...d, category: e.target.value as WordCategory | '' }))}
+                    className={inputCls}
+                  >
+                    <option value="">— choose —</option>
+                    {WORD_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{CATEGORY_META[c].emoji} {CATEGORY_META[c].label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Description (optional)</Label>
+                  <input
+                    type="text"
+                    value={setDraft.description}
+                    onChange={(e) => setSetDraft((d) => ({ ...d, description: e.target.value }))}
+                    placeholder="Brief description of the set…"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <Label>Display Order</Label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={setDraft.display_order}
+                    onChange={(e) => setSetDraft((d) => ({ ...d, display_order: Number(e.target.value) }))}
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+              {setError && (
+                <div className="flex items-center gap-2 text-red-400 text-sm bg-red-950/40 border border-red-800 rounded-xl px-4 py-3">
+                  <AlertCircle className="w-4 h-4 shrink-0" />{setError}
+                </div>
+              )}
+              {setSuccess && (
+                <div className="flex items-center gap-2 text-emerald-400 text-sm bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-3">
+                  <Check className="w-4 h-4 shrink-0" />Set created!
+                </div>
+              )}
+              <button
+                onClick={handleSaveSet}
+                disabled={setSaving}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors"
+              >
+                {setSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {setSaving ? 'Creating…' : 'Create Set'}
+              </button>
+            </div>
+
+            {/* Existing sets list */}
+            {setsLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-violet-400 animate-spin" /></div>
+            ) : sets.length === 0 ? (
+              <EmptyState message="No sets yet. Create your first set above." />
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-gray-800">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800 bg-gray-900/60">
+                      <th className="px-4 py-3 text-left text-gray-400 font-medium">Name</th>
+                      <th className="px-4 py-3 text-left text-gray-400 font-medium">Category</th>
+                      <th className="px-4 py-3 text-left text-gray-400 font-medium hidden md:table-cell">Description</th>
+                      <th className="px-4 py-3 text-left text-gray-400 font-medium">Order</th>
+                      <th className="px-4 py-3 text-right text-gray-400 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/50">
+                    {sets.map((s) => {
+                      const meta = CATEGORY_META[s.category];
+                      return (
+                        <tr key={s.id} className="hover:bg-gray-900/40 transition-colors group">
+                          <td className="px-4 py-3 font-semibold text-white">{s.name}</td>
+                          <td className="px-4 py-3 text-gray-300">
+                            <span className="text-sm">{meta.emoji} {meta.label}</span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px] truncate hidden md:table-cell">
+                            {s.description ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{s.display_order}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end opacity-60 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => setDeletingSetId(s.id)}
+                                title="Delete"
+                                className="p-1.5 rounded-lg hover:bg-red-900/40 text-gray-400 hover:text-red-400 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div className="px-4 py-2.5 border-t border-gray-800 bg-gray-900/30 text-xs text-gray-500">
+                  {sets.length} set{sets.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         {/* ── Tab: Settings ─────────────────────────────────────────────────── */}
         {tab === 'settings' && (
           <section className="max-w-2xl space-y-8">
@@ -1083,13 +1348,14 @@ export default function AdminPage() {
                 error={editError}
                 submitLabel="Save Changes"
                 submitIcon={<Check className="w-4 h-4" />}
+                sets={sets}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Delete Confirm Modal ─────────────────────────────────────────────── */}
+      {/* ── Delete Word Confirm Modal ─────────────────────────────────────────── */}
       {deletingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center space-y-4">
@@ -1111,6 +1377,37 @@ export default function AdminPage() {
               </button>
               <button
                 onClick={() => confirmDelete(deletingId)}
+                className="px-5 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-medium text-white transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Set Confirm Modal ─────────────────────────────────────────── */}
+      {deletingSetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center space-y-4">
+            <div className="w-12 h-12 bg-red-950 rounded-full flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6 text-red-400" />
+            </div>
+            <div>
+              <h2 className="font-bold text-white text-lg">Delete set?</h2>
+              <p className="text-sm text-gray-400 mt-1">
+                {sets.find((s) => s.id === deletingSetId)?.name} — words will keep their category but lose their set assignment.
+              </p>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setDeletingSetId(null)}
+                className="px-5 py-2 rounded-xl border border-gray-700 text-sm text-gray-300 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDeleteSet(deletingSetId)}
                 className="px-5 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-medium text-white transition-colors"
               >
                 Delete
@@ -1142,12 +1439,16 @@ interface WordFormProps {
   error: string | null;
   submitLabel: string;
   submitIcon: React.ReactNode;
+  sets: FlashcardSet[];
 }
 
-function WordForm({ draft, onChange, onSubmit, saving, error, submitLabel, submitIcon }: WordFormProps) {
+function WordForm({ draft, onChange, onSubmit, saving, error, submitLabel, submitIcon, sets }: WordFormProps) {
   function field(key: keyof WordDraft, value: string | number) {
     onChange({ ...draft, [key]: value });
   }
+
+  // Filter sets to those matching the selected category
+  const filteredSets = draft.category ? sets.filter((s) => s.category === draft.category) : sets;
 
   return (
     <div className="space-y-4">
@@ -1215,6 +1516,35 @@ function WordForm({ draft, onChange, onSubmit, saving, error, submitLabel, submi
         </div>
         <div className="flex items-end pb-0.5">
           <DifficultyBadge value={draft.difficulty} />
+        </div>
+        <div>
+          <Label>Category (optional)</Label>
+          <select
+            value={draft.category}
+            onChange={(e) => {
+              onChange({ ...draft, category: e.target.value as WordCategory | '', set_id: '' });
+            }}
+            className={inputCls}
+          >
+            <option value="">— none —</option>
+            {WORD_CATEGORIES.map((c) => (
+              <option key={c} value={c}>{CATEGORY_META[c].emoji} {CATEGORY_META[c].label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label>Flashcard Set (optional)</Label>
+          <select
+            value={draft.set_id}
+            onChange={(e) => field('set_id', e.target.value)}
+            disabled={!draft.category}
+            className={inputCls + (draft.category ? '' : ' opacity-40')}
+          >
+            <option value="">— none —</option>
+            {filteredSets.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
         </div>
       </div>
 

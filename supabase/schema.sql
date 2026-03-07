@@ -520,3 +520,278 @@ create index if not exists user_word_stats_incorrect_idx
 -- ============================================================
 -- To make a user an admin, run:
 --   update public.users set role = 'admin' where id = '<user-uuid>';
+
+-- ============================================================
+-- FLASHCARD SYSTEM
+-- ============================================================
+
+-- ── Word category (also represents learning level) ─────────────────────────────
+-- survival  → everyday/essential vocabulary (beginner)
+-- social    → communication & interpersonal vocabulary
+-- professional → workplace & academic vocabulary
+-- eloquent  → advanced literary & rhetorical vocabulary
+
+create type if not exists public.word_category as enum (
+  'survival', 'social', 'professional', 'eloquent'
+);
+
+-- ── Flashcard sets ─────────────────────────────────────────────────────────────
+-- Words are grouped into named sets within a category (e.g. "Animals", "Travel").
+-- display_order controls the order sets appear within a category.
+
+create table if not exists public.flashcard_sets (
+  id            uuid              primary key default gen_random_uuid(),
+  name          text              not null,
+  description   text,
+  category      public.word_category not null,
+  display_order integer           not null default 0,
+  created_at    timestamptz       not null default now()
+);
+
+-- ── Extend words with category + set membership ────────────────────────────────
+
+alter table public.words
+  add column if not exists category public.word_category,
+  add column if not exists set_id   uuid references public.flashcard_sets(id)
+                                        on delete set null;
+
+-- ── Flashcard reviews (SM-2 spaced repetition) ────────────────────────────────
+-- One row per (user, word) — tracks review schedule and performance.
+--
+-- SM-2 fields:
+--   ease_factor   — how easy the card is (starts at 2.5, min 1.3)
+--   interval_days — current review interval in days
+--   next_review_at — when the card is next due
+--   repetitions   — consecutive successful reviews (resets on fail)
+--   last_quality  — 0–5 rating from the most recent review (0–2 = fail, 3–5 = pass)
+
+create table if not exists public.flashcard_reviews (
+  user_id          uuid        not null references public.users(id)  on delete cascade,
+  word_id          uuid        not null references public.words(id)  on delete cascade,
+  ease_factor      float       not null default 2.5,
+  interval_days    integer     not null default 1,
+  next_review_at   timestamptz not null default now(),
+  repetitions      integer     not null default 0,
+  last_quality     integer              check (last_quality between 0 and 5),
+  last_reviewed_at timestamptz,
+  primary key (user_id, word_id)
+);
+
+-- ── User category progress ─────────────────────────────────────────────────────
+-- Aggregated learning progress per (user, category).
+-- words_seen    — unique words encountered at least once in flashcard sessions
+-- words_mastered — words with repetitions >= 3 (computed on upsert)
+
+create table if not exists public.user_category_progress (
+  user_id         uuid                 not null references public.users(id) on delete cascade,
+  category        public.word_category not null,
+  words_seen      integer              not null default 0,
+  words_mastered  integer              not null default 0,
+  last_studied_at timestamptz,
+  primary key (user_id, category)
+);
+
+-- ── RLS ────────────────────────────────────────────────────────────────────────
+
+alter table public.flashcard_sets           enable row level security;
+alter table public.flashcard_reviews        enable row level security;
+alter table public.user_category_progress   enable row level security;
+
+-- flashcard_sets: anyone can read; only admins can write
+create policy "flashcard_sets_select_authenticated"
+  on public.flashcard_sets for select to authenticated
+  using (true);
+
+create policy "flashcard_sets_write_admin"
+  on public.flashcard_sets for all to authenticated
+  using   (public.is_admin())
+  with check (public.is_admin());
+
+-- flashcard_reviews: users can read their own rows; writes go through the RPC
+create policy "flashcard_reviews_select_own"
+  on public.flashcard_reviews for select to authenticated
+  using (user_id = auth.uid());
+
+create policy "flashcard_reviews_write_via_function"
+  on public.flashcard_reviews for all to authenticated
+  using (false) with check (false);
+
+-- user_category_progress: same ownership rules
+create policy "user_category_progress_select_own"
+  on public.user_category_progress for select to authenticated
+  using (user_id = auth.uid() or public.is_admin());
+
+create policy "user_category_progress_write_via_function"
+  on public.user_category_progress for all to authenticated
+  using (false) with check (false);
+
+-- ── Stored procedures ──────────────────────────────────────────────────────────
+
+-- get_due_reviews
+-- Returns cards whose review interval has expired, oldest-due first.
+create or replace function public.get_due_reviews(
+  p_user_id uuid,
+  p_limit   integer default 20
+) returns table (
+  id               uuid,
+  word             text,
+  correct_definition text,
+  distractors      text[],
+  difficulty       integer,
+  category         public.word_category,
+  set_id           uuid,
+  repetitions      integer,
+  ease_factor      float,
+  interval_days    integer,
+  next_review_at   timestamptz
+) language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_user_id != auth.uid() then
+    raise exception 'Unauthorized';
+  end if;
+
+  return query
+  select
+    w.id, w.word, w.correct_definition, w.distractors, w.difficulty,
+    w.category, w.set_id,
+    fr.repetitions, fr.ease_factor, fr.interval_days, fr.next_review_at
+  from public.flashcard_reviews fr
+  join public.words w on w.id = fr.word_id
+  where fr.user_id = p_user_id
+    and fr.next_review_at <= now()
+  order by fr.next_review_at asc
+  limit p_limit;
+end;
+$$;
+
+-- submit_flashcard_review
+-- Applies the SM-2 algorithm and updates spaced-repetition state + category progress.
+--
+-- quality scale:
+--   0 → complete blackout (forgot)
+--   1 → incorrect, but the answer felt familiar
+--   2 → incorrect, but the correct answer was easy once seen
+--   3 → correct with significant difficulty
+--   4 → correct after a hesitation
+--   5 → perfect recall, no hesitation
+create or replace function public.submit_flashcard_review(
+  p_user_id uuid,
+  p_word_id uuid,
+  p_quality integer  -- 0–5
+) returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_repetitions    integer := 0;
+  v_ease_factor    float   := 2.5;
+  v_interval_days  integer := 1;
+  v_new_ef         float;
+  v_new_interval   integer;
+  v_new_reps       integer;
+  v_category       public.word_category;
+  v_is_new         boolean := true;
+begin
+  if p_user_id != auth.uid() then
+    raise exception 'Unauthorized';
+  end if;
+
+  -- Look up the word's category
+  select category into v_category from public.words where id = p_word_id;
+
+  -- Fetch existing SM-2 state (if any)
+  select repetitions, ease_factor, interval_days
+  into v_repetitions, v_ease_factor, v_interval_days
+  from public.flashcard_reviews
+  where user_id = p_user_id and word_id = p_word_id;
+
+  v_is_new := not found;
+
+  -- SM-2: update ease factor (always, regardless of pass/fail)
+  v_new_ef := v_ease_factor
+              + (0.1 - (5 - p_quality) * (0.08 + (5 - p_quality) * 0.02));
+  if v_new_ef < 1.3 then v_new_ef := 1.3; end if;
+
+  if p_quality < 3 then
+    -- Failed: reset
+    v_new_reps     := 0;
+    v_new_interval := 1;
+  else
+    -- Passed: advance schedule
+    v_new_reps := v_repetitions + 1;
+    if v_repetitions = 0 then
+      v_new_interval := 1;
+    elsif v_repetitions = 1 then
+      v_new_interval := 6;
+    else
+      v_new_interval := round(v_interval_days * v_new_ef);
+    end if;
+  end if;
+
+  -- Upsert review record
+  insert into public.flashcard_reviews (
+    user_id, word_id,
+    repetitions, ease_factor, interval_days,
+    next_review_at, last_quality, last_reviewed_at
+  ) values (
+    p_user_id, p_word_id,
+    v_new_reps, v_new_ef, v_new_interval,
+    now() + (v_new_interval || ' days')::interval,
+    p_quality, now()
+  )
+  on conflict (user_id, word_id) do update set
+    repetitions    = v_new_reps,
+    ease_factor    = v_new_ef,
+    interval_days  = v_new_interval,
+    next_review_at = now() + (v_new_interval || ' days')::interval,
+    last_quality   = p_quality,
+    last_reviewed_at = now();
+
+  -- Update category progress (only if the word belongs to a category)
+  if v_category is not null then
+    insert into public.user_category_progress
+      (user_id, category, words_seen, words_mastered, last_studied_at)
+    values (
+      p_user_id, v_category,
+      case when v_is_new then 1 else 0 end,
+      -- mastered = words with repetitions >= 3 in this category (recomputed)
+      (select count(*)
+       from public.flashcard_reviews fr2
+       join public.words w2 on w2.id = fr2.word_id
+       where fr2.user_id = p_user_id
+         and fr2.repetitions >= 3
+         and w2.category = v_category),
+      now()
+    )
+    on conflict (user_id, category) do update set
+      words_seen     = user_category_progress.words_seen
+                         + case when v_is_new then 1 else 0 end,
+      words_mastered = (
+        select count(*)
+        from public.flashcard_reviews fr2
+        join public.words w2 on w2.id = fr2.word_id
+        where fr2.user_id = p_user_id
+          and fr2.repetitions >= 3
+          and w2.category = v_category
+      ),
+      last_studied_at = now();
+  end if;
+end;
+$$;
+
+grant execute on function public.get_due_reviews         to authenticated;
+grant execute on function public.submit_flashcard_review to authenticated;
+
+-- ── Indexes ────────────────────────────────────────────────────────────────────
+
+-- Due-review lookup: (user, schedule) — the most common flashcard query
+create index if not exists flashcard_reviews_due_idx
+  on public.flashcard_reviews (user_id, next_review_at asc);
+
+-- Word filtering by category and set
+create index if not exists words_category_idx
+  on public.words (category);
+
+create index if not exists words_set_idx
+  on public.words (set_id);
+
+-- Flashcard sets by category (for category page listing)
+create index if not exists flashcard_sets_category_idx
+  on public.flashcard_sets (category, display_order asc);

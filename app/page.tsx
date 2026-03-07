@@ -16,9 +16,9 @@ export default function LandingPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const router = useRouter();
 
-  // Already logged in → go straight to game
+  // Already logged in → go straight to learn hub
   useEffect(() => {
-    if (!loading && user) router.replace('/game');
+    if (!loading && user) router.replace('/learn');
   }, [user, loading, router]);
 
   if (loading) {
