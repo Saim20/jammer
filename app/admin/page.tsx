@@ -25,7 +25,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { Word, GameConfig, FlashcardSet, WordCategory } from '@/types';
-import { DEFAULT_GAME_CONFIG, CATEGORY_META, WORD_CATEGORIES } from '@/types';
+import { DEFAULT_GAME_CONFIG, CATEGORY_META, WORD_CATEGORIES, difficultyToCategory } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,7 +38,6 @@ interface WordDraft {
   distractor2: string;
   distractor3: string;
   difficulty: number;
-  category: WordCategory | '';
   set_id: string;
 }
 
@@ -49,7 +48,6 @@ const EMPTY_DRAFT: WordDraft = {
   distractor2: '',
   distractor3: '',
   difficulty: 5,
-  category: '',
   set_id: '',
 };
 
@@ -60,7 +58,6 @@ interface CSVRow {
   distractor2: string;
   distractor3: string;
   difficulty: number;
-  category: WordCategory | '';
   set_name: string;
   _valid: boolean;
   _error?: string;
@@ -102,9 +99,8 @@ function parseCSV(text: string): CSVRow[] {
   // Accept headers case-insensitively, ignore header row
   return lines.slice(1).map((line) => {
     const cols = parseCSVLine(line);
-    const [word, correctDefinition, distractor1, distractor2, distractor3, diffStr, categoryStr, setNameStr] = cols;
+    const [word, correctDefinition, distractor1, distractor2, distractor3, diffStr, setNameStr] = cols;
     const difficulty = parseInt(diffStr ?? '', 10);
-    const category = (categoryStr ?? '').trim().toLowerCase() as WordCategory | '';
 
     const missing: string[] = [];
     if (!word) missing.push('word');
@@ -116,11 +112,6 @@ function parseCSV(text: string): CSVRow[] {
     const diffValid = !isNaN(difficulty) && difficulty >= 1 && difficulty <= 10;
     if (!diffValid) missing.push('difficulty (1–10)');
 
-    // category is optional but must be valid if provided
-    if (category && !(WORD_CATEGORIES as string[]).includes(category)) {
-      missing.push(`category must be one of: ${WORD_CATEGORIES.join(', ')}`);
-    }
-
     const _valid = missing.length === 0;
     return {
       word: word ?? '',
@@ -129,7 +120,6 @@ function parseCSV(text: string): CSVRow[] {
       distractor2: distractor2 ?? '',
       distractor3: distractor3 ?? '',
       difficulty: diffValid ? difficulty : 5,
-      category: (category && (WORD_CATEGORIES as string[]).includes(category) ? category : '') as WordCategory | '',
       set_name: (setNameStr ?? '').trim(),
       _valid,
       _error: _valid ? undefined : `Missing/invalid: ${missing.join(', ')}`,
@@ -143,14 +133,13 @@ function draftToRow(d: WordDraft) {
     correct_definition: d.correctDefinition.trim(),
     distractors: [d.distractor1.trim(), d.distractor2.trim(), d.distractor3.trim()],
     difficulty: d.difficulty,
-    category: d.category || null,
     set_id: d.set_id || null,
   };
 }
 
 const CSV_TEMPLATE =
-  'word,correctDefinition,distractor1,distractor2,distractor3,difficulty,category,set_name\n' +
-  'Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",6,eloquent,"Literary Devices"\n';
+  'word,correctDefinition,distractor1,distractor2,distractor3,difficulty,set_name\n' +
+  'Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",9,"Literary Devices"\n';
 
 // ── Embedding helpers ─────────────────────────────────────────────────────────
 // These are module-level (no component state) so they can be called anywhere.
@@ -370,7 +359,6 @@ export default function AdminPage() {
       distractor2: w.distractors[1] ?? '',
       distractor3: w.distractors[2] ?? '',
       difficulty: w.difficulty,
-      category: w.category ?? '',
       set_id: w.set_id ?? '',
     });
     setEditError(null);
@@ -550,31 +538,32 @@ export default function AdminPage() {
     const inserted: { id: string; word: string; correct_definition: string }[] = [];
 
     // Build a set-name → id cache to avoid duplicate lookups/creates
-    const setCache = new Map<string, string>(sets.map((s) => [`${s.category}::${s.name}`, s.id]));
+    // For CSV import, sets are identified by name alone; category is derived from difficulty
+    const setCache = new Map<string, string>(sets.map((s) => [s.name, s.id]));
 
     for (const row of validRows) {
       try {
-        // Resolve set_id from set_name + category (auto-create if needed)
+        // Resolve set_id from set_name (auto-create if needed)
+        // The set's category is inferred from the word's difficulty
         let resolvedSetId: string | null = null;
-        if (row.set_name && row.category) {
-          const cacheKey = `${row.category}::${row.set_name}`;
-          if (setCache.has(cacheKey)) {
-            resolvedSetId = setCache.get(cacheKey)!;
+        if (row.set_name) {
+          if (setCache.has(row.set_name)) {
+            resolvedSetId = setCache.get(row.set_name)!;
           } else {
-            // Try to find existing set
+            // Try to find existing set by name
             const { data: existingSet } = await supabase
               .from('flashcard_sets')
               .select('id')
-              .eq('category', row.category)
               .eq('name', row.set_name)
               .maybeSingle();
             if (existingSet) {
               resolvedSetId = existingSet.id;
             } else {
-              // Create new set
+              // Create new set — derive category from the word's difficulty
+              const inferredCat = difficultyToCategory(row.difficulty);
               const { data: newSet, error: setErr } = await supabase
                 .from('flashcard_sets')
-                .insert({ name: row.set_name, category: row.category, display_order: 0 })
+                .insert({ name: row.set_name, category: inferredCat, display_order: 0 })
                 .select()
                 .single();
               if (!setErr && newSet) {
@@ -582,7 +571,7 @@ export default function AdminPage() {
                 setSets((prev) => [...prev, newSet as FlashcardSet]);
               }
             }
-            if (resolvedSetId) setCache.set(cacheKey, resolvedSetId);
+            if (resolvedSetId) setCache.set(row.set_name, resolvedSetId);
           }
         }
 
@@ -593,7 +582,6 @@ export default function AdminPage() {
             correct_definition: row.correctDefinition,
             distractors: [row.distractor1, row.distractor2, row.distractor3],
             difficulty: row.difficulty,
-            category: row.category || null,
             set_id: resolvedSetId,
           })
           .select()
@@ -757,7 +745,12 @@ export default function AdminPage() {
                           <span className="line-clamp-1">{w.distractors.join(' · ')}</span>
                         </td>
                         <td className="px-4 py-3">
-                          <DifficultyBadge value={w.difficulty} />
+                          <div className="flex flex-col gap-0.5">
+                            <DifficultyBadge value={w.difficulty} />
+                            <span className="text-[10px] text-gray-600">
+                              {CATEGORY_META[difficultyToCategory(w.difficulty)].emoji} {CATEGORY_META[difficultyToCategory(w.difficulty)].label}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
@@ -839,8 +832,9 @@ export default function AdminPage() {
                   Required columns:{' '}
                   <code className="text-violet-400">word, correctDefinition, distractor1, distractor2, distractor3, difficulty</code>
                   <br />
-                  Optional columns:{' '}
-                  <code className="text-violet-400">category (survival/social/professional/eloquent), set_name</code>
+                  Optional column:{' '}
+                  <code className="text-violet-400">set_name</code>
+                  {' '}— category is derived automatically from difficulty (1–3=Survival, 4–6=Social, 7–8=Professional, 9–10=Eloquent)
                 </p>
               </div>
               <button
@@ -1446,8 +1440,9 @@ function WordForm({ draft, onChange, onSubmit, saving, error, submitLabel, submi
     onChange({ ...draft, [key]: value });
   }
 
-  // Filter sets to those matching the selected category
-  const filteredSets = draft.category ? sets.filter((s) => s.category === draft.category) : sets;
+  // Filter sets to those matching the category derived from the current difficulty
+  const derivedCategory = difficultyToCategory(draft.difficulty);
+  const filteredSets = sets.filter((s) => s.category === derivedCategory);
 
   return (
     <div className="space-y-4">
@@ -1509,35 +1504,28 @@ function WordForm({ draft, onChange, onSubmit, saving, error, submitLabel, submi
             min={1}
             max={10}
             value={draft.difficulty}
-            onChange={(e) => field('difficulty', Math.min(10, Math.max(1, Number(e.target.value))))}
+            onChange={(e) => {
+              const newDiff = Math.min(10, Math.max(1, Number(e.target.value)));
+              // When difficulty changes the derived category may change — reset set_id
+              const newCat = difficultyToCategory(newDiff);
+              const oldCat = difficultyToCategory(draft.difficulty);
+              onChange({ ...draft, difficulty: newDiff, set_id: newCat !== oldCat ? '' : draft.set_id });
+            }}
             className={inputCls}
           />
         </div>
-        <div className="flex items-end pb-0.5">
+        <div className="flex items-end pb-0.5 flex-col gap-1 items-start">
           <DifficultyBadge value={draft.difficulty} />
+          <span className="text-xs text-gray-500">
+            → {CATEGORY_META[derivedCategory].emoji} {CATEGORY_META[derivedCategory].label}
+          </span>
         </div>
-        <div>
-          <Label>Category (optional)</Label>
-          <select
-            value={draft.category}
-            onChange={(e) => {
-              onChange({ ...draft, category: e.target.value as WordCategory | '', set_id: '' });
-            }}
-            className={inputCls}
-          >
-            <option value="">— none —</option>
-            {WORD_CATEGORIES.map((c) => (
-              <option key={c} value={c}>{CATEGORY_META[c].emoji} {CATEGORY_META[c].label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label>Flashcard Set (optional)</Label>
+        <div className="col-span-2">
+          <Label>Flashcard Set (optional — {CATEGORY_META[derivedCategory].label} sets shown)</Label>
           <select
             value={draft.set_id}
             onChange={(e) => field('set_id', e.target.value)}
-            disabled={!draft.category}
-            className={inputCls + (draft.category ? '' : ' opacity-40')}
+            className={inputCls}
           >
             <option value="">— none —</option>
             {filteredSets.map((s) => (

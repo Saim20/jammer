@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { ChevronLeft, BookOpen, Loader2, ChevronRight, LayoutGrid } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { CATEGORY_META, WORD_CATEGORIES } from '@/types';
+import { CATEGORY_META, WORD_CATEGORIES, CATEGORY_DIFFICULTY_RANGE } from '@/types';
 import type { WordCategory, FlashcardSet } from '@/types';
 
 interface SetWithProgress extends FlashcardSet {
@@ -45,11 +45,13 @@ export default function CategoryPage() {
           .eq('category', category)
           .order('display_order', { ascending: true });
 
-        // Fetch word counts per set in this category
+        // Fetch word counts per set in this category (using difficulty range)
+        const [diffMin, diffMax] = CATEGORY_DIFFICULTY_RANGE[category as WordCategory];
         const { data: wordData } = await supabase
           .from('words')
           .select('id, set_id')
-          .eq('category', category);
+          .gte('difficulty', diffMin)
+          .lte('difficulty', diffMax);
 
         // Fetch user's review history for words in this category
         const wordIds = (wordData ?? []).map((w) => w.id);
@@ -161,6 +163,7 @@ export default function CategoryPage() {
           <span className="text-4xl shrink-0">{meta.emoji}</span>
           <div className="flex-1 min-w-0">
             <h1 className={`text-2xl font-extrabold ${colorText[meta.color]}`}>{meta.label}</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Difficulty {meta.difficultyRange}</p>
             <p className="text-sm text-gray-400 mt-1">{meta.description}</p>
             <div className="mt-4 flex flex-col gap-1.5">
               <div className="flex justify-between text-xs text-gray-500">

@@ -525,18 +525,31 @@ create index if not exists user_word_stats_incorrect_idx
 -- FLASHCARD SYSTEM
 -- ============================================================
 
--- ── Word category (also represents learning level) ─────────────────────────────
--- survival  → everyday/essential vocabulary (beginner)
--- social    → communication & interpersonal vocabulary
--- professional → workplace & academic vocabulary
--- eloquent  → advanced literary & rhetorical vocabulary
+-- ── Word category (derived from difficulty — not stored on words) ──────────────
+-- difficulty 1–3  → survival     (everyday essentials)
+-- difficulty 4–6  → social       (communication & interpersonal)
+-- difficulty 7–8  → professional (workplace & academic)
+-- difficulty 9–10 → eloquent     (advanced literary & rhetorical)
 
 create type if not exists public.word_category as enum (
   'survival', 'social', 'professional', 'eloquent'
 );
 
+-- Pure function: maps any difficulty value to its category.
+-- immutable + security definer so it can be inlined by the planner.
+create or replace function public.difficulty_to_category(p_difficulty integer)
+returns public.word_category language sql immutable security definer set search_path = public as $$
+  select case
+    when p_difficulty <= 3 then 'survival'::public.word_category
+    when p_difficulty <= 6 then 'social'::public.word_category
+    when p_difficulty <= 8 then 'professional'::public.word_category
+    else                        'eloquent'::public.word_category
+  end;
+$$;
+
 -- ── Flashcard sets ─────────────────────────────────────────────────────────────
 -- Words are grouped into named sets within a category (e.g. "Animals", "Travel").
+-- category here mirrors the difficulty band the set targets.
 -- display_order controls the order sets appear within a category.
 
 create table if not exists public.flashcard_sets (
@@ -548,12 +561,15 @@ create table if not exists public.flashcard_sets (
   created_at    timestamptz       not null default now()
 );
 
--- ── Extend words with category + set membership ────────────────────────────────
+-- ── Extend words with set membership only ─────────────────────────────────────
+-- category is intentionally NOT stored on words; it is always derived from
+-- difficulty via difficulty_to_category(). This prevents redundancy and
+-- guarantees consistency: moving a word's difficulty automatically moves
+-- it to the right category without any additional bookkeeping.
 
 alter table public.words
-  add column if not exists category public.word_category,
-  add column if not exists set_id   uuid references public.flashcard_sets(id)
-                                        on delete set null;
+  add column if not exists set_id uuid references public.flashcard_sets(id)
+                                      on delete set null;
 
 -- ── Flashcard reviews (SM-2 spaced repetition) ────────────────────────────────
 -- One row per (user, word) — tracks review schedule and performance.
@@ -629,6 +645,7 @@ create policy "user_category_progress_write_via_function"
 
 -- get_due_reviews
 -- Returns cards whose review interval has expired, oldest-due first.
+-- category is derived from difficulty via difficulty_to_category().
 create or replace function public.get_due_reviews(
   p_user_id uuid,
   p_limit   integer default 20
@@ -653,7 +670,8 @@ begin
   return query
   select
     w.id, w.word, w.correct_definition, w.distractors, w.difficulty,
-    w.category, w.set_id,
+    public.difficulty_to_category(w.difficulty),
+    w.set_id,
     fr.repetitions, fr.ease_factor, fr.interval_days, fr.next_review_at
   from public.flashcard_reviews fr
   join public.words w on w.id = fr.word_id
@@ -686,6 +704,7 @@ declare
   v_new_ef         float;
   v_new_interval   integer;
   v_new_reps       integer;
+  v_difficulty     integer;
   v_category       public.word_category;
   v_is_new         boolean := true;
 begin
@@ -693,8 +712,9 @@ begin
     raise exception 'Unauthorized';
   end if;
 
-  -- Look up the word's category
-  select category into v_category from public.words where id = p_word_id;
+  -- Derive category from difficulty (no redundant column on words)
+  select difficulty into v_difficulty from public.words where id = p_word_id;
+  v_category := public.difficulty_to_category(v_difficulty);
 
   -- Fetch existing SM-2 state (if any)
   select repetitions, ease_factor, interval_days
@@ -744,38 +764,37 @@ begin
     last_quality   = p_quality,
     last_reviewed_at = now();
 
-  -- Update category progress (only if the word belongs to a category)
-  if v_category is not null then
-    insert into public.user_category_progress
-      (user_id, category, words_seen, words_mastered, last_studied_at)
-    values (
-      p_user_id, v_category,
-      case when v_is_new then 1 else 0 end,
-      -- mastered = words with repetitions >= 3 in this category (recomputed)
-      (select count(*)
-       from public.flashcard_reviews fr2
-       join public.words w2 on w2.id = fr2.word_id
-       where fr2.user_id = p_user_id
-         and fr2.repetitions >= 3
-         and w2.category = v_category),
-      now()
-    )
-    on conflict (user_id, category) do update set
-      words_seen     = user_category_progress.words_seen
-                         + case when v_is_new then 1 else 0 end,
-      words_mastered = (
-        select count(*)
-        from public.flashcard_reviews fr2
-        join public.words w2 on w2.id = fr2.word_id
-        where fr2.user_id = p_user_id
-          and fr2.repetitions >= 3
-          and w2.category = v_category
-      ),
-      last_studied_at = now();
-  end if;
+  -- Update category progress — every word always belongs to a category
+  insert into public.user_category_progress
+    (user_id, category, words_seen, words_mastered, last_studied_at)
+  values (
+    p_user_id, v_category,
+    case when v_is_new then 1 else 0 end,
+    -- mastered = words with repetitions >= 3 in this category (recomputed)
+    (select count(*)
+     from public.flashcard_reviews fr2
+     join public.words w2 on w2.id = fr2.word_id
+     where fr2.user_id = p_user_id
+       and fr2.repetitions >= 3
+       and public.difficulty_to_category(w2.difficulty) = v_category),
+    now()
+  )
+  on conflict (user_id, category) do update set
+    words_seen     = user_category_progress.words_seen
+                       + case when v_is_new then 1 else 0 end,
+    words_mastered = (
+      select count(*)
+      from public.flashcard_reviews fr2
+      join public.words w2 on w2.id = fr2.word_id
+      where fr2.user_id = p_user_id
+        and fr2.repetitions >= 3
+        and public.difficulty_to_category(w2.difficulty) = v_category
+    ),
+    last_studied_at = now();
 end;
 $$;
 
+grant execute on function public.difficulty_to_category    to authenticated;
 grant execute on function public.get_due_reviews         to authenticated;
 grant execute on function public.submit_flashcard_review to authenticated;
 
@@ -785,13 +804,15 @@ grant execute on function public.submit_flashcard_review to authenticated;
 create index if not exists flashcard_reviews_due_idx
   on public.flashcard_reviews (user_id, next_review_at asc);
 
--- Word filtering by category and set
-create index if not exists words_category_idx
-  on public.words (category);
-
+-- Word filtering by set
 create index if not exists words_set_idx
   on public.words (set_id);
 
 -- Flashcard sets by category (for category page listing)
 create index if not exists flashcard_sets_category_idx
   on public.flashcard_sets (category, display_order asc);
+
+-- Word filtering by difficulty range (replaces the dropped category column index)
+create index if not exists words_difficulty_range_idx
+  on public.words (difficulty)
+  where difficulty is not null;

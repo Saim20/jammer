@@ -7,7 +7,7 @@ import { ChevronLeft, Loader2, CheckCircle2, BookOpen, RefreshCcw } from 'lucide
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import FlashCard, { type ReviewQuality } from '@/components/FlashCard';
-import { CATEGORY_META, WORD_CATEGORIES } from '@/types';
+import { CATEGORY_META, WORD_CATEGORIES, CATEGORY_DIFFICULTY_RANGE, difficultyToCategory } from '@/types';
 import type { Word, WordCategory } from '@/types';
 
 type Mode = 'learn' | 'review' | 'missed';
@@ -56,18 +56,34 @@ export default function FlashcardPage() {
         if (rpcErr) throw rpcErr;
         let rows = (data ?? []) as Word[];
         if (setId) rows = rows.filter((w) => w.set_id === setId);
-        if (categoryParam) rows = rows.filter((w) => w.category === categoryParam);
+        // Filter by category = difficultyToCategory(difficulty)
+        if (categoryParam) rows = rows.filter((w) => difficultyToCategory(w.difficulty) === categoryParam);
         loaded = rows;
 
       } else if (modeParam === 'missed') {
-        // Words missed in game sessions
-        const { data, error: rpcErr } = await supabase.rpc('get_weak_words', {
-          p_user_id: user.id,
-          p_limit: 30,
-          p_threshold: 1,
-        });
-        if (rpcErr) throw rpcErr;
-        loaded = (data ?? []) as Word[];
+        // Words missed in game sessions — fetch via user_word_stats
+        const { data: statsData, error: sErr } = await supabase
+          .from('user_word_stats')
+          .select('word_id, incorrect_count')
+          .eq('user_id', user.id)
+          .gt('incorrect_count', 0)
+          .order('incorrect_count', { ascending: false })
+          .limit(30);
+        if (sErr) throw sErr;
+        const missedIds = (statsData ?? []).map((r) => r.word_id);
+        if (missedIds.length === 0) {
+          setWords([]);
+          setPhase('done');
+          return;
+        }
+        const { data: missedWords, error: wErr } = await supabase
+          .from('words')
+          .select('*')
+          .in('id', missedIds);
+        if (wErr) throw wErr;
+        // Sort by incorrect_count descending (most missed first)
+        const countMap = new Map((statsData ?? []).map((r) => [r.word_id, r.incorrect_count]));
+        loaded = (missedWords ?? []).sort((a, b) => (countMap.get(b.id) ?? 0) - (countMap.get(a.id) ?? 0));
 
       } else {
         // 'learn' mode: fetch words for set/category, new ones first
@@ -75,7 +91,8 @@ export default function FlashcardPage() {
         if (setId) {
           wordQuery = wordQuery.eq('set_id', setId);
         } else if (categoryParam) {
-          wordQuery = wordQuery.eq('category', categoryParam);
+          const [diffMin, diffMax] = CATEGORY_DIFFICULTY_RANGE[categoryParam];
+          wordQuery = wordQuery.gte('difficulty', diffMin).lte('difficulty', diffMax);
         } else {
           // No filter — shouldn't normally happen; use a reasonable default
           wordQuery = wordQuery.limit(20);
@@ -238,7 +255,7 @@ export default function FlashcardPage() {
 
   // ── Study screen ─────────────────────────────────────────────────────────────
   const currentWord = words[currentIndex];
-  const catMeta = currentWord?.category ? CATEGORY_META[currentWord.category] : null;
+  const catMeta = currentWord ? CATEGORY_META[difficultyToCategory(currentWord.difficulty)] : null;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-6">

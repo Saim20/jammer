@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { Word } from '@/types';
-import { CATEGORY_META } from '@/types';
+import { CATEGORY_META, difficultyToCategory } from '@/types';
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -26,7 +26,7 @@ const RATINGS: { quality: ReviewQuality; label: string; sublabel: string; color:
 export default function FlashCard({ word, currentIndex, totalWords, onRate, mode }: Props) {
   const [flipped, setFlipped] = useState(false);
 
-  const categoryMeta = word.category ? CATEGORY_META[word.category] : null;
+  const categoryMeta = CATEGORY_META[difficultyToCategory(word.difficulty)];
 
   function handleRate(quality: ReviewQuality) {
     setFlipped(false);
@@ -81,7 +81,7 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, mode
               )}
               {categoryMeta && (
                 <span className="text-xs px-2 py-0.5 rounded-full border border-gray-600 text-gray-400 bg-gray-800">
-                  {categoryMeta.emoji} {categoryMeta.label}
+                  {categoryMeta.emoji} {categoryMeta.label} ({categoryMeta.difficultyRange})
                 </span>
               )}
               {/* Difficulty dots */}

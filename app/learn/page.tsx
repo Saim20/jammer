@@ -55,15 +55,17 @@ export default function LearnPage() {
         }
         setProgress(progMap);
 
-        // Total word counts per category
+        // Total word counts per category (derived from difficulty ranges)
         const { data: wordData } = await supabase
           .from('words')
-          .select('category')
-          .not('category', 'is', null);
+          .select('difficulty');
         const totals = {} as Record<WordCategory, number>;
         for (const cat of WORD_CATEGORIES) totals[cat] = 0;
         for (const row of wordData ?? []) {
-          if (row.category) totals[row.category as WordCategory]++;
+          const d = row.difficulty as number;
+          const cat: WordCategory =
+            d <= 3 ? 'survival' : d <= 6 ? 'social' : d <= 8 ? 'professional' : 'eloquent';
+          totals[cat]++;
         }
         setCategoryTotals(totals);
       } finally {

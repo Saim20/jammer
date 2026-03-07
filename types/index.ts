@@ -1,34 +1,50 @@
 /**
- * The four vocabulary categories, which also represent learning levels:
- * survival (beginner) → social → professional → eloquent (advanced).
+ * The four vocabulary categories, derived from word difficulty:
+ * survival (1–3) → social (4–6) → professional (7–8) → eloquent (9–10).
+ * Category is NEVER stored on words; always computed via difficultyToCategory().
  */
 export type WordCategory = 'survival' | 'social' | 'professional' | 'eloquent';
+
+/** Maps a difficulty value (1–10) to its category. Mirrors difficulty_to_category() in SQL. */
+export function difficultyToCategory(difficulty: number): WordCategory {
+  if (difficulty <= 3) return 'survival';
+  if (difficulty <= 6) return 'social';
+  if (difficulty <= 8) return 'professional';
+  return 'eloquent';
+}
 
 /** Human-readable labels and descriptions for each category. */
 export const CATEGORY_META: Record<
   WordCategory,
-  { label: string; emoji: string; description: string; color: string }
+  { label: string; emoji: string; description: string; color: string; difficultyRange: string }
 > = {
-  survival:     { label: 'Survival',     emoji: '🏕️',  description: 'Everyday essentials — the words you need to get by.',      color: 'emerald' },
-  social:       { label: 'Social',       emoji: '💬',  description: 'Communication & interpersonal vocabulary.',                  color: 'sky'     },
-  professional: { label: 'Professional', emoji: '💼',  description: 'Workplace, academic and formal register.',                   color: 'violet'  },
-  eloquent:     { label: 'Eloquent',     emoji: '📚',  description: 'Advanced literary, rhetorical and nuanced vocabulary.',      color: 'amber'   },
+  survival:     { label: 'Survival',     emoji: '🏕️',  description: 'Everyday essentials — the words you need to get by.',       color: 'emerald', difficultyRange: '1–3'  },
+  social:       { label: 'Social',       emoji: '💬',  description: 'Communication & interpersonal vocabulary.',                   color: 'sky',     difficultyRange: '4–6'  },
+  professional: { label: 'Professional', emoji: '💼',  description: 'Workplace, academic and formal register.',                    color: 'violet',  difficultyRange: '7–8'  },
+  eloquent:     { label: 'Eloquent',     emoji: '📚',  description: 'Advanced literary, rhetorical and nuanced vocabulary.',       color: 'amber',   difficultyRange: '9–10' },
 };
 
 export const WORD_CATEGORIES: WordCategory[] = ['survival', 'social', 'professional', 'eloquent'];
 
+/** Difficulty range bounds for each category — matches difficulty_to_category() in SQL. */
+export const CATEGORY_DIFFICULTY_RANGE: Record<WordCategory, [number, number]> = {
+  survival:     [1, 3],
+  social:       [4, 6],
+  professional: [7, 8],
+  eloquent:     [9, 10],
+};
+
 /** Vocabulary word stored in Supabase `words` table.
- *  The `embedding` column is excluded from client fetches — use match_words() RPC instead. */
+ *  The `embedding` column is excluded from client fetches — use match_words() RPC instead.
+ *  NOTE: category is NOT stored — derive it with difficultyToCategory(word.difficulty). */
 export interface Word {
   id: string;
   word: string;
   correct_definition: string;
   /** Exactly 3 wrong answer choices. */
   distractors: string[];
-  /** Difficulty rating 1–10. */
+  /** Difficulty rating 1–10. Category is inferred: 1-3=survival, 4-6=social, 7-8=professional, 9-10=eloquent */
   difficulty: number;
-  /** Learning category / level. Null for legacy words not yet categorised. */
-  category: WordCategory | null;
   /** Flashcard set this word belongs to. Null if not assigned to a set. */
   set_id: string | null;
   created_at?: string;
@@ -76,8 +92,10 @@ export interface UserCategoryProgress {
   last_studied_at: string | null;
 }
 
-/** A word enriched with its current SM-2 review state (returned by get_due_reviews). */
+/** A word enriched with its current SM-2 review state (returned by get_due_reviews).
+ *  category is computed by the RPC as difficulty_to_category(difficulty). */
 export interface WordWithReview extends Word {
+  category: WordCategory;
   repetitions: number;
   ease_factor: number;
   interval_days: number;
