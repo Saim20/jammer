@@ -41,7 +41,7 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, mode
         <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-300"
-            style={{ width: `${((currentIndex) / totalWords) * 100}%` }}
+            style={{ width: `${((currentIndex + 1) / totalWords) * 100}%` }}
           />
         </div>
         <span className="text-xs text-gray-500 shrink-0 tabular-nums">

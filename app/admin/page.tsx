@@ -105,7 +105,6 @@ function parseCSV(text: string): CSVRow[] {
     const [word, correctDefinition, distractor1, distractor2, distractor3, diffStr, categoryStr, setNameStr] = cols;
     const difficulty = parseInt(diffStr ?? '', 10);
     const category = (categoryStr ?? '').trim().toLowerCase() as WordCategory | '';
-    const validCategories: string[] = ['survival', 'social', 'professional', 'eloquent'];
 
     const missing: string[] = [];
     if (!word) missing.push('word');
@@ -118,8 +117,8 @@ function parseCSV(text: string): CSVRow[] {
     if (!diffValid) missing.push('difficulty (1–10)');
 
     // category is optional but must be valid if provided
-    if (category && !validCategories.includes(category)) {
-      missing.push(`category must be one of: ${validCategories.join(', ')}`);
+    if (category && !(WORD_CATEGORIES as string[]).includes(category)) {
+      missing.push(`category must be one of: ${WORD_CATEGORIES.join(', ')}`);
     }
 
     const _valid = missing.length === 0;
@@ -130,7 +129,7 @@ function parseCSV(text: string): CSVRow[] {
       distractor2: distractor2 ?? '',
       distractor3: distractor3 ?? '',
       difficulty: diffValid ? difficulty : 5,
-      category: (category && validCategories.includes(category) ? category : '') as WordCategory | '',
+      category: (category && (WORD_CATEGORIES as string[]).includes(category) ? category : '') as WordCategory | '',
       set_name: (setNameStr ?? '').trim(),
       _valid,
       _error: _valid ? undefined : `Missing/invalid: ${missing.join(', ')}`,
