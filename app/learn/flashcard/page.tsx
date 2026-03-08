@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft, Loader2, CheckCircle2, BookOpen, RefreshCcw, X } from 'lucide-react';
@@ -17,7 +17,7 @@ interface WordResult {
   quality: ReviewQuality;
 }
 
-export default function FlashcardPage() {
+function FlashcardPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -305,5 +305,19 @@ export default function FlashcardPage() {
         <p className="text-xs text-center text-gray-600 animate-pulse">Saving…</p>
       )}
     </div>
+  );
+}
+
+export default function FlashcardPageWrapper() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+          <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+        </div>
+      }
+    >
+      <FlashcardPage />
+    </Suspense>
   );
 }

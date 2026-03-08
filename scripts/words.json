@@ -1,0 +1,733 @@
+[
+  {
+    "word": "Vivid",
+    "correct_definition": "Producing powerful feelings or strong, clear images in the mind.",
+    "distractors": [
+      "Dull and lacking in colour or interest.",
+      "Faint and barely perceptible to the senses.",
+      "Relating to the scientific study of vision."
+    ],
+    "difficulty": 1
+  },
+  {
+    "word": "Meek",
+    "correct_definition": "Quiet, gentle, and easily imposed on; submissive.",
+    "distractors": [
+      "Showing great confidence and boldness.",
+      "Aggressively asserting one's own opinions.",
+      "Extremely loud and disruptive in behaviour."
+    ],
+    "difficulty": 1
+  },
+  {
+    "word": "Brisk",
+    "correct_definition": "Active, fast, and energetic; refreshingly cool and invigorating.",
+    "distractors": [
+      "Moving slowly and without energy.",
+      "Excessively warm and stifling in temperature.",
+      "Showing reluctance or resistance to act."
+    ],
+    "difficulty": 1
+  },
+  {
+    "word": "Keen",
+    "correct_definition": "Having or showing eagerness or enthusiasm; intellectually sharp.",
+    "distractors": [
+      "Showing a complete lack of interest.",
+      "Moving in a slow and heavy manner.",
+      "Blunt and lacking in sharpness of mind."
+    ],
+    "difficulty": 1
+  },
+  {
+    "word": "Serene",
+    "correct_definition": "Calm, peaceful, and untroubled; tranquil.",
+    "distractors": [
+      "Extremely anxious and easily unsettled.",
+      "Showing great emotional intensity and drama.",
+      "Relating to a scene or outdoor landscape."
+    ],
+    "difficulty": 1
+  },
+  {
+    "word": "Grim",
+    "correct_definition": "Stern and forbidding in appearance or character; depressing.",
+    "distractors": [
+      "Cheerful and pleasant in all circumstances.",
+      "Extremely messy and disorganised.",
+      "Relating to fairy tales and folklore."
+    ],
+    "difficulty": 1
+  },
+  {
+    "word": "Adept",
+    "correct_definition": "Very skilled or proficient at something; highly competent.",
+    "distractors": [
+      "Completely lacking in ability or skill.",
+      "Relating to a formal learning process.",
+      "Showing a tendency to adapt too quickly."
+    ],
+    "difficulty": 2
+  },
+  {
+    "word": "Blunt",
+    "correct_definition": "Uncompromisingly forthright in speech; direct and to the point.",
+    "distractors": [
+      "Using overly complex or elaborate language.",
+      "Having a sharp and finely pointed edge.",
+      "Tending to be roundabout and indirect."
+    ],
+    "difficulty": 2
+  },
+  {
+    "word": "Fickle",
+    "correct_definition": "Changing frequently, especially in loyalties or affections; unreliable.",
+    "distractors": [
+      "Showing extreme steadfastness and loyalty.",
+      "Relating to something very small or trivial.",
+      "Having a naturally sour or acidic taste."
+    ],
+    "difficulty": 2
+  },
+  {
+    "word": "Somber",
+    "correct_definition": "Dark or dull in colour or tone; serious and melancholy.",
+    "distractors": [
+      "Extremely bright and cheerful in mood.",
+      "Relating to a specific musical key.",
+      "Producing a harsh, unpleasant, grating sound."
+    ],
+    "difficulty": 2
+  },
+  {
+    "word": "Wary",
+    "correct_definition": "Feeling or showing caution about possible dangers or problems.",
+    "distractors": [
+      "Acting without any concern or caution whatsoever.",
+      "Showing eagerness to take risky actions.",
+      "Relating to warfare or military strategy."
+    ],
+    "difficulty": 2
+  },
+  {
+    "word": "Stern",
+    "correct_definition": "Serious and unrelenting, especially in the assertion of authority.",
+    "distractors": [
+      "Showing a gentle, warm, and forgiving nature.",
+      "Referring to the front section of a ship.",
+      "Extremely playful and lacking all seriousness."
+    ],
+    "difficulty": 2
+  },
+  {
+    "word": "Ardent",
+    "correct_definition": "Having or showing intense enthusiasm or passion; fervent.",
+    "distractors": [
+      "Showing complete emotional indifference.",
+      "Excelling at complex mathematical reasoning.",
+      "Acting in a slow, overly cautious manner."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "Astute",
+    "correct_definition": "Having an ability to accurately assess situations and turn them to one's advantage; shrewd.",
+    "distractors": [
+      "Lacking the ability to judge situations well.",
+      "Relating to the scientific study of stars.",
+      "Showing a tendency to be easily deceived."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "Cordial",
+    "correct_definition": "Warm and friendly; pleasantly agreeable in manner.",
+    "distractors": [
+      "Cold and unfriendly in manner.",
+      "Relating to the heart or body's core.",
+      "Excessively formal and ceremonially stiff."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "Genial",
+    "correct_definition": "Friendly, cheerful, and pleasantly warm-natured.",
+    "distractors": [
+      "Showing a cold and distant attitude.",
+      "Relating to genetics or hereditary traits.",
+      "Acting in an overly strict, rigid manner."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "Prudent",
+    "correct_definition": "Acting with or showing care and thought for the future; sensible.",
+    "distractors": [
+      "Making decisions without any prior forethought.",
+      "Relating to church rules and canon regulations.",
+      "Showing excessive pride in one's own appearance."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "Subtle",
+    "correct_definition": "So delicate or precise as to be difficult to analyse or describe; not obvious.",
+    "distractors": [
+      "Extremely obvious and easy to notice.",
+      "Showing great physical strength and force.",
+      "Relating to underground or subterranean things."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "Stoic",
+    "correct_definition": "Enduring pain or hardship without showing feelings or complaining.",
+    "distractors": [
+      "Expressing emotions freely and dramatically.",
+      "Relating to ancient Greek athletic training.",
+      "Showing extreme sensitivity to discomfort."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "Affable",
+    "correct_definition": "Friendly, good-natured, and easy to talk to; approachable.",
+    "distractors": [
+      "Cold and difficult to approach socially.",
+      "Relating to religious or spiritual matters.",
+      "Showing a tendency to be argumentative."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "Brazen",
+    "correct_definition": "Bold and without shame; enduring without showing distress.",
+    "distractors": [
+      "Behaving in an extremely timid and shy way.",
+      "Made from or relating to bronze material.",
+      "Showing great consideration for others' feelings."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "Contrite",
+    "correct_definition": "Feeling or expressing sincere remorse; penitent.",
+    "distractors": [
+      "Showing no remorse or regret whatsoever.",
+      "Relating to a contracted or compressed form.",
+      "Extremely stubborn and unyielding in attitude."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "Docile",
+    "correct_definition": "Ready to accept control or instruction; submissive and obedient.",
+    "distractors": [
+      "Stubbornly refusing all instruction or control.",
+      "Relating to an official formal document.",
+      "Extremely aggressive and difficult to manage."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "Evasive",
+    "correct_definition": "Tending to avoid commitment or direct speech; not frank.",
+    "distractors": [
+      "Being completely open, frank, and transparent.",
+      "Relating to rapid escape manoeuvres.",
+      "Showing great attention to precise detail."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "Gregarious",
+    "correct_definition": "Fond of company; sociable; enjoying being with others.",
+    "distractors": [
+      "Preferring solitude over all social situations.",
+      "Relating to the behaviour of animal herds.",
+      "Showing extreme shyness and discomfort in groups."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "Impulsive",
+    "correct_definition": "Acting or done without forethought; driven by sudden urges.",
+    "distractors": [
+      "Thinking very carefully before every action.",
+      "Relating to electrical impulses in the body.",
+      "Showing great reluctance to make any decision."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "Acerbic",
+    "correct_definition": "Sharp and direct in manner or speech; critical and cutting.",
+    "distractors": [
+      "Extremely gentle and flattering in all speech.",
+      "Relating to a sour, acidic chemical substance.",
+      "Showing great warmth and personal kindness."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Assuage",
+    "correct_definition": "To make an unpleasant feeling less intense; to relieve or soothe.",
+    "distractors": [
+      "To make a bad situation significantly worse.",
+      "To issue a formal public announcement.",
+      "To move with great skill and physical agility."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Cajole",
+    "correct_definition": "To persuade someone to do something by sustained coaxing or flattery.",
+    "distractors": [
+      "To force compliance through threats and intimidation.",
+      "To make someone feel deeply insulted or offended.",
+      "To formally charge someone with a legal offence."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Fleeting",
+    "correct_definition": "Lasting for a very short time; passing swiftly.",
+    "distractors": [
+      "Remaining stable and permanent over long periods.",
+      "Relating to rapid physical movement or speed.",
+      "Showing great emotional substance and depth."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Intrepid",
+    "correct_definition": "Fearless and adventurous; undaunted in the face of danger.",
+    "distractors": [
+      "Showing extreme timidity and cowardice.",
+      "Relating to a treacherous or hazardous path.",
+      "Acting in a consistently cautious and calculated manner."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Languid",
+    "correct_definition": "Displaying a disinclination for physical exertion; weak and slow-moving.",
+    "distractors": [
+      "Showing great energy, drive, and eagerness.",
+      "Relating to a particular spoken language.",
+      "Moving in a quick, alert, and purposeful manner."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Mercurial",
+    "correct_definition": "Subject to sudden or unpredictable changes of mood or mind; volatile.",
+    "distractors": [
+      "Showing a perfectly stable and predictable temperament.",
+      "Relating to the planet Mercury in astronomy.",
+      "Acting in an unhurried and methodical manner."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Petulant",
+    "correct_definition": "Childishly sulky or irritable; showing sudden, bad-tempered annoyance.",
+    "distractors": [
+      "Showing great maturity and emotional control.",
+      "Relating to small and delicate floral patterns.",
+      "Enduring difficulty with patience and grace."
+    ],
+    "difficulty": 5
+  },
+  {
+    "word": "Acquiesce",
+    "correct_definition": "To accept something reluctantly but without protest; to comply passively.",
+    "distractors": [
+      "To vigorously oppose and challenge a situation.",
+      "To acquire something through questionable means.",
+      "To politely but firmly decline an offer."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Clandestine",
+    "correct_definition": "Kept secret or done secretively so as to conceal an illicit purpose.",
+    "distractors": [
+      "Open, publicly visible, and completely transparent.",
+      "Relating to a clan or close family group.",
+      "Performed in an extremely formal and official way."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Culpable",
+    "correct_definition": "Deserving blame for a fault or wrong; responsible and at fault.",
+    "distractors": [
+      "Completely innocent and entirely blameless.",
+      "Capable of being successfully cultivated or grown.",
+      "Showing great skill in deflecting personal blame."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Intransigent",
+    "correct_definition": "Unwilling or refusing to change one's views; stubbornly uncompromising.",
+    "distractors": [
+      "Showing a ready willingness to compromise.",
+      "Relating to international travel or transit.",
+      "Unable to maintain a firm or consistent position."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Obdurate",
+    "correct_definition": "Stubbornly refusing to change one's opinion or course of action.",
+    "distractors": [
+      "Showing a ready willingness to be persuaded.",
+      "Relating to an obscure or dim quality.",
+      "Abandoning one's position too easily under pressure."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Querulous",
+    "correct_definition": "Complaining in a petulant or whining manner; habitually fretful.",
+    "distractors": [
+      "Showing a cheerful and uncomplaining acceptance.",
+      "Having an intensely curious and inquisitive nature.",
+      "Speaking in a calm, measured, and even tone."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Reticent",
+    "correct_definition": "Not revealing one's thoughts or feelings readily; habitually reserved.",
+    "distractors": [
+      "Eagerly sharing all personal information with others.",
+      "Showing a noticeable tendency to repeat things.",
+      "Acting in an overly dramatic and expressive fashion."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Penurious",
+    "correct_definition": "Extremely poor; unwilling to spend money; miserly.",
+    "distractors": [
+      "Extremely financially wealthy and lavish.",
+      "Relating to a formal state of punishment.",
+      "Showing exceptional generosity to those in need."
+    ],
+    "difficulty": 6
+  },
+  {
+    "word": "Antediluvian",
+    "correct_definition": "Ridiculously old-fashioned; of or belonging to a very ancient period.",
+    "distractors": [
+      "Of or relating to the present or very recent day.",
+      "Involving a gradual process of physical ageing.",
+      "Produced entirely by modern technology and methods."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Cogent",
+    "correct_definition": "Clear, logical, and convincing; forceful and to the point.",
+    "distractors": [
+      "Confused, rambling, and difficult to follow.",
+      "Relating to the philosophical science of thought.",
+      "Lacking persuasive force or logical coherence."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Dilettante",
+    "correct_definition": "A person who cultivates an area of knowledge as a hobby without serious commitment.",
+    "distractors": [
+      "An acknowledged expert and authority in a field.",
+      "Someone who persistently delays important decisions.",
+      "A person with extraordinary skill and perseverance."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Ebullient",
+    "correct_definition": "Cheerful and full of energy; exuberant and enthusiastic.",
+    "distractors": [
+      "Showing extreme melancholy and deep sadness.",
+      "Relating to a boiling or bubbling liquid.",
+      "Acting in a withdrawn and quietly reserved manner."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Fastidious",
+    "correct_definition": "Very attentive to accuracy and detail; very careful about personal cleanliness.",
+    "distractors": [
+      "Showing a complete lack of care or attention to detail.",
+      "Relating to something that can be attached or fastened.",
+      "Acting in a completely carefree and disorganised manner."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Inimical",
+    "correct_definition": "Unfriendly; hostile; tending to obstruct or be harmful.",
+    "distractors": [
+      "Showing genuine warmth, kindness, and acceptance.",
+      "Relating to the formal study of one's enemies.",
+      "Acting in an actively beneficial and helpful manner."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Munificent",
+    "correct_definition": "Larger or more generous than is usual or necessary; lavishly generous.",
+    "distractors": [
+      "Extremely stingy and reluctant with resources.",
+      "Relating to city government or municipal matters.",
+      "Producing a very large but low-quality output."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Obtuse",
+    "correct_definition": "Annoyingly slow in understanding; lacking perceptiveness or quickness of mind.",
+    "distractors": [
+      "Extremely quick and sharp in understanding things.",
+      "Relating to an angle measuring more than 90 degrees.",
+      "Showing great clarity and intellectual precision."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Sycophantic",
+    "correct_definition": "Behaving or done in an obsequious way in order to gain advantage; fawning.",
+    "distractors": [
+      "Showing refreshing honesty and forceful independence.",
+      "Relating to the nature of a musical sound.",
+      "Acting with confident disregard for others' opinions."
+    ],
+    "difficulty": 7
+  },
+  {
+    "word": "Abeyance",
+    "correct_definition": "A state of temporary disuse or suspension; awaiting resolution.",
+    "distractors": [
+      "A state of full and highly active operation.",
+      "Relating to a formal legal statement or oath.",
+      "A permanent and completely irreversible condition."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Bloviate",
+    "correct_definition": "To talk at length in an inflated or empty way; to orate pompously.",
+    "distractors": [
+      "To speak with great precision and intellectual clarity.",
+      "To remain completely silent on a sensitive matter.",
+      "To write in an admirably concise and focused manner."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Contumacious",
+    "correct_definition": "Stubbornly and wilfully disobedient to authority; rebellious.",
+    "distractors": [
+      "Showing great and eager willingness to comply.",
+      "Relating to an intense feeling of contempt.",
+      "Acting in a careful, obedient, and dutiful manner."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Expurgate",
+    "correct_definition": "To remove matter considered offensive or objectionable from a text; to censor.",
+    "distractors": [
+      "To add new supplementary content to a document.",
+      "To publicly distribute important written material.",
+      "To translate a text faithfully into another language."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Fungible",
+    "correct_definition": "Able to replace or be replaced by another identical item; interchangeable.",
+    "distractors": [
+      "Relating to fungi, mould, or mushrooms.",
+      "Unable to be replaced or properly substituted.",
+      "Having a highly unique and individual quality."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Impecunious",
+    "correct_definition": "Having little or no money; chronically penniless.",
+    "distractors": [
+      "Extremely financially wealthy and comfortable.",
+      "Unable to be accurately measured in financial terms.",
+      "Showing exceptional skill in the management of money."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Jejune",
+    "correct_definition": "Naive and simplistic; lacking interest or significance; unsophisticated.",
+    "distractors": [
+      "Extremely complex, nuanced, and sophisticated.",
+      "Relating to the summer month of June.",
+      "Having great emotional and intellectual substance."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Limpid",
+    "correct_definition": "Free of anything that darkens; clear and transparent; (of writing) lucid and simple.",
+    "distractors": [
+      "Murky, clouded, and difficult to see through.",
+      "Moving slowly, weakly, and without energy.",
+      "Relating to a translucent and precious gemstone."
+    ],
+    "difficulty": 8
+  },
+  {
+    "word": "Callipygian",
+    "correct_definition": "Having well-shaped or finely formed buttocks.",
+    "distractors": [
+      "Relating to beautiful or ornate handwriting.",
+      "Having an exceptionally beautiful singing voice.",
+      "Relating to the philosophical study of beauty."
+    ],
+    "difficulty": 9
+  },
+  {
+    "word": "Empyrean",
+    "correct_definition": "Of or relating to the highest heaven; sublime and celestial.",
+    "distractors": [
+      "Relating to fire, combustion, and burning.",
+      "Of or belonging to an underworld or abyss.",
+      "Relating to an empire or its ruling power."
+    ],
+    "difficulty": 9
+  },
+  {
+    "word": "Fuliginous",
+    "correct_definition": "Relating to or resembling soot or smoke; dusky and obscure.",
+    "distractors": [
+      "Extremely bright, luminous, and radiant.",
+      "Relating to something full, complete, or whole.",
+      "Producing a consistently pleasant, sweet fragrance."
+    ],
+    "difficulty": 9
+  },
+  {
+    "word": "Otiose",
+    "correct_definition": "Serving no practical purpose or result; futile; indolent.",
+    "distractors": [
+      "Extremely productive, purposeful, and useful.",
+      "Relating to the ear or the sense of hearing.",
+      "Showing remarkable energy, drive, and ambition."
+    ],
+    "difficulty": 9
+  },
+  {
+    "word": "Panegyric",
+    "correct_definition": "A public speech or published text in praise of someone or something.",
+    "distractors": [
+      "A written condemnation or formal denunciation.",
+      "A type of unleavened bread in ancient Greece.",
+      "A structured public debate on a controversial issue."
+    ],
+    "difficulty": 9
+  },
+  {
+    "word": "Velleity",
+    "correct_definition": "A wish or inclination not strong enough to lead to action; a mere whim.",
+    "distractors": [
+      "A strong and deliberate act of focused willpower.",
+      "An involuntary and unconscious physical movement.",
+      "A state of intense and unwavering mental focus."
+    ],
+    "difficulty": 9
+  },
+  {
+    "word": "Pleonasm",
+    "correct_definition": "The use of more words than are necessary to express meaning; verbal redundancy.",
+    "distractors": [
+      "The deliberate removal of all unnecessary words.",
+      "A highly complex rhetorical or grammatical structure.",
+      "The scientific study of planets and their movements."
+    ],
+    "difficulty": 9
+  },
+
+  {
+    "word": "Borborygmus",
+    "correct_definition": "A rumbling or gurgling noise made by the movement of fluid and gas in the intestines.",
+    "distractors": [
+      "A loud, resonant thunderclap during a storm.",
+      "A form of ancient Greek lyric poetry.",
+      "A deep and intricate philosophical argument."
+    ],
+    "difficulty": 10
+  },
+  {
+    "word": "Ultracrepidarian",
+    "correct_definition": "Giving opinions and advice on matters outside one's knowledge or competence.",
+    "distractors": [
+      "An acknowledged expert across all fields of study.",
+      "Someone who is consistently modest about their knowledge.",
+      "A person who firmly refuses to share any opinions."
+    ],
+    "difficulty": 10
+  },
+  {
+    "word": "Lethologica",
+    "correct_definition": "The inability to recall or remember a particular word or name.",
+    "distractors": [
+      "The scholarly study of ancient dead languages.",
+      "An obsessive and passionate love of words.",
+      "The cognitive process of acquiring a new language."
+    ],
+    "difficulty": 10
+  },
+  {
+    "word": "Mumpsimus",
+    "correct_definition": "A traditional custom or belief stubbornly adhered to even after it has been shown to be unreasonable.",
+    "distractors": [
+      "The intellectual willingness to revise one's beliefs.",
+      "A highly contagious disease common in childhood.",
+      "A type of sacred ritual in ancient Rome."
+    ],
+    "difficulty": 10
+  },
+  {
+    "word": "Dysania",
+    "correct_definition": "The condition of finding it extremely difficult to get out of bed in the morning.",
+    "distractors": [
+      "A medical condition causing complete sleeplessness.",
+      "The remarkable ability to sleep in any environment.",
+      "A neurological disorder affecting balance and coordination."
+    ],
+    "difficulty": 10
+  },
+  {
+    "word": "Resistentialism",
+    "correct_definition": "The seemingly spiteful or hostile behaviour displayed by inanimate objects.",
+    "distractors": [
+      "A philosophy advocating peaceful coexistence.",
+      "A branch of quantum mechanics theory.",
+      "The study of human psychological resistance to change."
+    ],
+    "difficulty": 10
+  },
+  {
+    "word": "Recumbentibus",
+    "correct_definition": "A knockout blow, whether physical or verbal; a decisive retort.",
+    "distractors": [
+      "A posture of upright and formal attentiveness.",
+      "A style of ancient Roman architectural design.",
+      "A gentle and non-confrontational form of disagreement."
+    ],
+    "difficulty": 10
+  }
+]
