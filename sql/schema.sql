@@ -531,9 +531,19 @@ create index if not exists user_word_stats_incorrect_idx
 -- difficulty 7–8  → professional (workplace & academic)
 -- difficulty 9–10 → eloquent     (advanced literary & rhetorical)
 
-create type if not exists public.word_category as enum (
-  'survival', 'social', 'professional', 'eloquent'
-);
+do $$
+begin
+  if not exists (
+    select 1 from pg_type t
+    join pg_namespace n on n.oid = t.typnamespace
+    where t.typname = 'word_category' and n.nspname = 'public'
+  ) then
+    create type public.word_category as enum (
+      'survival', 'social', 'professional', 'eloquent'
+    );
+  end if;
+end
+$$;
 
 -- Pure function: maps any difficulty value to its category.
 -- immutable + security definer so it can be inlined by the planner.

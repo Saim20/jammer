@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed:supabase": "node scripts/seed-supabase.mjs",
-    "seed:supabase:embed": "node scripts/seed-supabase.mjs --embed-only"
+    "seed:supabase:embed": "node scripts/seed-supabase.mjs --embed-only",
+    "gen:types": "supabase gen types typescript --project-id zadlhdxvuvmzrpsbrkbn > types/types.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
