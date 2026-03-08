@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Word } from '@/types';
 import { CATEGORY_META, difficultyToCategory } from '@/types';
 
@@ -12,21 +12,44 @@ interface Props {
   totalWords: number;
   /** Called after the user rates the card. Parent handles navigation. */
   onRate: (quality: ReviewQuality) => void;
+  /** Optional: skip (no rating) to next card. */
+  onSkip?: () => void;
   /** Optional: show context label (e.g. "Review" or "New"). */
   mode?: 'learn' | 'review' | 'missed';
 }
 
-const RATINGS: { quality: ReviewQuality; label: string; sublabel: string; color: string }[] = [
-  { quality: 1, label: 'Again',  sublabel: 'forgot',        color: 'bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30' },
-  { quality: 3, label: 'Hard',   sublabel: 'struggled',     color: 'bg-orange-500/20 border-orange-500/50 text-orange-300 hover:bg-orange-500/30' },
-  { quality: 4, label: 'Good',   sublabel: 'hesitated',     color: 'bg-blue-500/20 border-blue-500/50 text-blue-300 hover:bg-blue-500/30' },
-  { quality: 5, label: 'Easy',   sublabel: 'instant',       color: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30' },
+const RATINGS: { quality: ReviewQuality; label: string; sublabel: string; key: string; color: string }[] = [
+  { quality: 1, label: 'Again',  sublabel: 'forgot',        key: '1', color: 'bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30' },
+  { quality: 3, label: 'Hard',   sublabel: 'struggled',     key: '2', color: 'bg-orange-500/20 border-orange-500/50 text-orange-300 hover:bg-orange-500/30' },
+  { quality: 4, label: 'Good',   sublabel: 'hesitated',     key: '3', color: 'bg-blue-500/20 border-blue-500/50 text-blue-300 hover:bg-blue-500/30' },
+  { quality: 5, label: 'Easy',   sublabel: 'instant',       key: '4', color: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30' },
 ];
 
-export default function FlashCard({ word, currentIndex, totalWords, onRate, mode }: Props) {
+export default function FlashCard({ word, currentIndex, totalWords, onRate, onSkip, mode }: Props) {
   const [flipped, setFlipped] = useState(false);
 
   const categoryMeta = CATEGORY_META[difficultyToCategory(word.difficulty)];
+
+  // Keyboard shortcuts: Space/Enter = flip, 1–4 = rate after flip
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      // Ignore when focus is inside an input/textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        if (!flipped) setFlipped(true);
+      } else if (flipped) {
+        const rating = RATINGS.find((r) => r.key === e.key);
+        if (rating) {
+          e.preventDefault();
+          handleRate(rating.quality);
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flipped]);
 
   function handleRate(quality: ReviewQuality) {
     setFlipped(false);
@@ -136,25 +159,46 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, mode
 
       {/* Rating buttons (visible only after flip) */}
       {flipped ? (
-        <div className="grid grid-cols-4 gap-3">
-          {RATINGS.map(({ quality, label, sublabel, color }) => (
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-4 gap-3">
+            {RATINGS.map(({ quality, label, sublabel, key, color }) => (
+              <button
+                key={quality}
+                onClick={() => handleRate(quality)}
+                className={`flex flex-col items-center gap-0.5 rounded-xl border px-2 py-3 text-sm font-semibold transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-violet-500 ${color}`}
+              >
+                <span>{label}</span>
+                <span className="text-xs font-normal opacity-70">{sublabel}</span>
+                <span className="text-[10px] font-mono opacity-40 mt-0.5">[{key}]</span>
+              </button>
+            ))}
+          </div>
+          {onSkip && (
             <button
-              key={quality}
-              onClick={() => handleRate(quality)}
-              className={`flex flex-col items-center gap-0.5 rounded-xl border px-2 py-3 text-sm font-semibold transition-all active:scale-95 ${color}`}
+              onClick={onSkip}
+              className="w-full text-xs text-gray-600 hover:text-gray-400 transition-colors py-1"
             >
-              <span>{label}</span>
-              <span className="text-xs font-normal opacity-70">{sublabel}</span>
+              skip →
             </button>
-          ))}
+          )}
         </div>
       ) : (
-        <button
-          onClick={() => setFlipped(true)}
-          className="w-full rounded-xl border border-gray-700 bg-gray-800 hover:bg-gray-750 text-gray-300 py-3 text-sm font-medium transition-colors"
-        >
-          Show Answer
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => setFlipped(true)}
+            className="w-full rounded-xl border border-gray-700 bg-gray-800 hover:bg-gray-750 text-gray-300 py-3 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
+          >
+            Show Answer <span className="text-xs font-mono text-gray-600 ml-1">[Space]</span>
+          </button>
+          {onSkip && (
+            <button
+              onClick={onSkip}
+              className="w-full text-xs text-gray-600 hover:text-gray-400 transition-colors py-1"
+            >
+              skip →
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

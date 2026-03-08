@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Loader2, CheckCircle2, BookOpen, RefreshCcw } from 'lucide-react';
+import { ChevronLeft, Loader2, CheckCircle2, BookOpen, RefreshCcw, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import FlashCard, { type ReviewQuality } from '@/components/FlashCard';
@@ -175,6 +175,14 @@ export default function FlashcardPage() {
     }
   }
 
+  function handleSkip() {
+    if (currentIndex + 1 >= words.length) {
+      setPhase('done');
+    } else {
+      setCurrentIndex((i) => i + 1);
+    }
+  }
+
   const modeLabel = modeParam === 'review' ? 'Review' : modeParam === 'missed' ? 'Practice' : 'Learn';
   const backHref = categoryParam ? `/learn/${categoryParam}` : '/learn';
 
@@ -273,6 +281,13 @@ export default function FlashcardPage() {
         <span className="text-xs bg-gray-800 border border-gray-700 text-gray-400 rounded-full px-3 py-1">
           {modeLabel} {catMeta ? `· ${catMeta.emoji} ${catMeta.label}` : ''}
         </span>
+        <Link
+          href={backHref}
+          aria-label="End session"
+          className="p-1.5 rounded-lg text-gray-600 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </Link>
       </div>
 
       {currentWord && (
@@ -281,6 +296,7 @@ export default function FlashcardPage() {
           currentIndex={currentIndex}
           totalWords={words.length}
           onRate={handleRate}
+          onSkip={handleSkip}
           mode={modeParam}
         />
       )}

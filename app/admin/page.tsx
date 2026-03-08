@@ -195,7 +195,7 @@ export default function AdminPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('words')
-        .select('id, word, correct_definition, distractors, difficulty, category, set_id, created_at, updated_at')
+        .select('id, word, correct_definition, distractors, difficulty, set_id, created_at, updated_at')
         .order('word');
       if (error) throw error;
       return (data ?? []) as Word[];
