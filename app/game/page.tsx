@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Trophy, RotateCcw, AlertCircle } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import GameBoard from '@/components/GameBoard';
@@ -25,12 +26,7 @@ export default function GamePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [config, setConfig] = useState<GameConfig>(DEFAULT_GAME_CONFIG);
-  // timerSecondsRef always reflects the current config so callbacks don't stale-close over it
-  const timerSecondsRef = useRef(DEFAULT_GAME_CONFIG.timer_seconds);
-
   const [restartKey, setRestartKey] = useState(0);
-  const [words, setWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [choices, setChoices] = useState<string[]>([]);
   const [score, setScore] = useState(0);
@@ -38,7 +34,6 @@ export default function GamePage() {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [timeLeft, setTimeLeft] = useState(DEFAULT_GAME_CONFIG.timer_seconds);
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const [scoreSaved, setScoreSaved] = useState(false);
   const [savingScore, setSavingScore] = useState(false);
 
@@ -47,6 +42,57 @@ export default function GamePage() {
 
   // Accumulates each word result during the game so they can be batch-saved at the end
   const wordResultsRef = useRef<{ word_id: string; answer_index: number | null; time_taken: number }[]>([]);
+
+  // ── Fetch config + words ────────────────────────────────────────────────────
+  const { data: gameData, isLoading: isLoadingGame, error: gameError } = useQuery({
+    queryKey: ['game-data', restartKey],
+    queryFn: async () => {
+      let resolvedConfig = DEFAULT_GAME_CONFIG;
+      try {
+        const { data: cfgData } = await supabase
+          .from('game_config')
+          .select('*')
+          .eq('id', 1)
+          .single();
+        if (cfgData) resolvedConfig = { ...DEFAULT_GAME_CONFIG, ...cfgData } as GameConfig;
+      } catch {
+        // Config read failing is non-fatal — fall back to defaults
+      }
+
+      const { data: allWords, error } = await supabase
+        .from('words')
+        .select('id, word, correct_definition, distractors, difficulty');
+
+      if (error) throw error;
+      if (!allWords || allWords.length === 0) {
+        throw new Error('No words found. Ask an admin to add some first.');
+      }
+
+      const eligible = (allWords as Word[]).filter(
+        (w) => w.difficulty >= resolvedConfig.difficulty_min && w.difficulty <= resolvedConfig.difficulty_max,
+      );
+      const pool = eligible.length > 0 ? eligible : (allWords as Word[]);
+      const shuffled = shuffleArray(pool);
+
+      return {
+        config: resolvedConfig,
+        words: shuffled.slice(0, resolvedConfig.word_count),
+      };
+    },
+    enabled: !!user,
+    staleTime: Infinity, // Never background-refetch mid-game
+    gcTime: 0,           // Don't keep stale game data between restarts
+    retry: false,
+  });
+
+  const config = gameData?.config ?? DEFAULT_GAME_CONFIG;
+  const words = gameData?.words ?? [];
+
+  // timerSecondsRef always reflects the current config so callbacks don't stale-close over it
+  const timerSecondsRef = useRef(DEFAULT_GAME_CONFIG.timer_seconds);
+  useEffect(() => {
+    timerSecondsRef.current = config.timer_seconds;
+  }, [config.timer_seconds]);
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -63,57 +109,6 @@ export default function GamePage() {
     hasAnsweredRef.current = false;
     setPhase('playing');
   }, []);
-
-  // ── Fetch config + words from Supabase ─────────────────────────────────────
-  useEffect(() => {
-    if (!user) return;
-    async function fetchAll() {
-      try {
-        // Load config first so we can filter words correctly
-        let resolvedConfig = DEFAULT_GAME_CONFIG;
-        try {
-          const { data: cfgData } = await supabase
-            .from('game_config')
-            .select('*')
-            .eq('id', 1)
-            .single();
-          if (cfgData) {
-            resolvedConfig = { ...DEFAULT_GAME_CONFIG, ...cfgData } as GameConfig;
-          }
-        } catch {
-          // Config read failing is non-fatal — fall back to defaults
-        }
-        setConfig(resolvedConfig);
-        timerSecondsRef.current = resolvedConfig.timer_seconds;
-
-        // Fetch all words — exclude the embedding column (large, not needed on the client)
-        const { data: allWords, error } = await supabase
-          .from('words')
-          .select('id, word, correct_definition, distractors, difficulty');
-
-        if (error) throw error;
-        if (!allWords || allWords.length === 0) {
-          setFetchError('No words found. Ask an admin to add some first.');
-          return;
-        }
-
-        const eligible = (allWords as Word[]).filter(
-          (w) => w.difficulty >= resolvedConfig.difficulty_min && w.difficulty <= resolvedConfig.difficulty_max,
-        );
-
-        // If eligible pool is smaller than word_count, use all eligible words
-        const pool = eligible.length > 0 ? eligible : (allWords as Word[]);
-        const shuffled = shuffleArray(pool);
-        const selected = shuffled.slice(0, resolvedConfig.word_count);
-
-        setWords(selected);
-      } catch (err) {
-        console.error('Supabase fetch error:', err);
-        setFetchError('Could not load words. Check your Supabase config.');
-      }
-    }
-    fetchAll();
-  }, [user, restartKey]);
 
   // ── Start game once words are loaded (also handles restart) ────────────────
   useEffect(() => {
@@ -208,7 +203,6 @@ export default function GamePage() {
     setScore(0);
     setScoreSaved(false);
     setPhase('loading');
-    setWords([]);
     setRestartKey((k) => k + 1);
   }
 
@@ -217,16 +211,18 @@ export default function GamePage() {
     return <Spinner />;
   }
 
-  if (fetchError) {
+  if (gameError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-64px)] gap-4 px-4 text-center">
         <AlertCircle className="w-12 h-12 text-red-400" />
-        <p className="text-red-400 font-semibold max-w-md">{fetchError}</p>
+        <p className="text-red-400 font-semibold max-w-md">
+          {gameError instanceof Error ? gameError.message : 'Could not load words. Check your Supabase config.'}
+        </p>
       </div>
     );
   }
 
-  if (phase === 'loading') {
+  if (isLoadingGame || phase === 'loading') {
     return <Spinner />;
   }
 

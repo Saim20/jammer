@@ -8,5 +8,7 @@ applyTo: '**' # when provided, instructions will automatically be added to the r
 `sql/tables/**`: contains all database canonical sql table information with relevant sql triggers,functions, indexes etc.
 `sql/functions/**`: contains all database canonical function sql files that are table agnostic.
 `sql/migrations/**`: contains all database migration sql files. Store new migration sql files here and update the canonical files for every migration.
+`types/types.ts`: contains all current types in supabase.
+`types/index.ts`: contains all re exported types from supabase that are in use in the codebase
 Use the backend capabilities only when optimum and required for the most efficient system.
 Use TS for anything that should be done on the client side for better performance and resource efficiency.

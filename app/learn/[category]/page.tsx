@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft, BookOpen, Loader2, ChevronRight, LayoutGrid } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_META, WORD_CATEGORIES, CATEGORY_DIFFICULTY_RANGE } from '@/types';
@@ -23,98 +24,87 @@ export default function CategoryPage() {
 
   const isValidCategory = WORD_CATEGORIES.includes(category as WordCategory);
 
-  const [sets, setSets] = useState<SetWithProgress[]>([]);
-  const [totalInCategory, setTotalInCategory] = useState(0);
-  const [seenInCategory, setSeenInCategory] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['learn-cat', user?.id, category],
+    queryFn: async () => {
+      const { data: setsData } = await supabase
+        .from('flashcard_sets')
+        .select('*')
+        .eq('category', category)
+        .order('display_order', { ascending: true });
+
+      const [diffMin, diffMax] = CATEGORY_DIFFICULTY_RANGE[category as WordCategory];
+      const { data: wordData } = await supabase
+        .from('words')
+        .select('id, set_id')
+        .gte('difficulty', diffMin)
+        .lte('difficulty', diffMax);
+
+      const wordIds = (wordData ?? []).map((w) => w.id);
+      const seenSet = new Set<string>();
+      const dueSet = new Set<string>();
+      if (wordIds.length > 0) {
+        const { data: reviewData } = await supabase
+          .from('flashcard_reviews')
+          .select('word_id, next_review_at')
+          .eq('user_id', user!.id)
+          .in('word_id', wordIds);
+        const now = new Date().toISOString();
+        for (const r of reviewData ?? []) {
+          seenSet.add(r.word_id);
+          if (r.next_review_at <= now) dueSet.add(r.word_id);
+        }
+      }
+
+      const countBySet: Record<string, number> = {};
+      for (const w of wordData ?? []) {
+        if (w.set_id) countBySet[w.set_id] = (countBySet[w.set_id] ?? 0) + 1;
+      }
+      const uncategorizedIds = (wordData ?? []).filter((w) => !w.set_id).map((w) => w.id);
+
+      const enriched: SetWithProgress[] = (setsData ?? []).map((s) => {
+        const setWordIds = (wordData ?? []).filter((w) => w.set_id === s.id).map((w) => w.id);
+        return {
+          ...s,
+          total: countBySet[s.id] ?? 0,
+          seen: setWordIds.filter((id) => seenSet.has(id)).length,
+          due: setWordIds.filter((id) => dueSet.has(id)).length,
+        };
+      });
+
+      if (uncategorizedIds.length > 0) {
+        enriched.push({
+          id: '__unset__',
+          name: 'Uncategorized',
+          description: 'Words in this category not yet assigned to a set.',
+          category: category as WordCategory,
+          display_order: 9999,
+          created_at: '',
+          total: uncategorizedIds.length,
+          seen: uncategorizedIds.filter((id) => seenSet.has(id)).length,
+          due: uncategorizedIds.filter((id) => dueSet.has(id)).length,
+        });
+      }
+
+      return {
+        sets: enriched,
+        totalInCategory: wordIds.length,
+        seenInCategory: seenSet.size,
+      };
+    },
+    enabled: !!user && isValidCategory,
+  });
+
+  const sets = data?.sets ?? [];
+  const totalInCategory = data?.totalInCategory ?? 0;
+  const seenInCategory = data?.seenInCategory ?? 0;
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/');
     if (!authLoading && !isValidCategory) router.replace('/learn');
   }, [user, authLoading, router, isValidCategory]);
 
-  useEffect(() => {
-    if (!user || !isValidCategory) return;
-    async function load() {
-      setLoading(true);
-      try {
-        // Fetch sets in this category
-        const { data: setsData } = await supabase
-          .from('flashcard_sets')
-          .select('*')
-          .eq('category', category)
-          .order('display_order', { ascending: true });
-
-        // Fetch word counts per set in this category (using difficulty range)
-        const [diffMin, diffMax] = CATEGORY_DIFFICULTY_RANGE[category as WordCategory];
-        const { data: wordData } = await supabase
-          .from('words')
-          .select('id, set_id')
-          .gte('difficulty', diffMin)
-          .lte('difficulty', diffMax);
-
-        // Fetch user's review history for words in this category
-        const wordIds = (wordData ?? []).map((w) => w.id);
-        const seenSet: Set<string> = new Set();
-        const dueSet: Set<string> = new Set();
-        if (wordIds.length > 0) {
-          const { data: reviewData } = await supabase
-            .from('flashcard_reviews')
-            .select('word_id, next_review_at')
-            .eq('user_id', user!.id)
-            .in('word_id', wordIds);
-          const now = new Date().toISOString();
-          for (const r of reviewData ?? []) {
-            seenSet.add(r.word_id);
-            if (r.next_review_at <= now) dueSet.add(r.word_id);
-          }
-        }
-
-        setTotalInCategory(wordIds.length);
-        setSeenInCategory(seenSet.size);
-
-        // Build word-count map per set
-        const countBySet: Record<string, number> = {};
-        for (const w of wordData ?? []) {
-          if (w.set_id) countBySet[w.set_id] = (countBySet[w.set_id] ?? 0) + 1;
-        }
-
-        // Words not in any set (set_id = null)
-        const uncategorizedIds = (wordData ?? []).filter((w) => !w.set_id).map((w) => w.id);
-
-        const enriched: SetWithProgress[] = (setsData ?? []).map((s) => {
-          const setWordIds = (wordData ?? []).filter((w) => w.set_id === s.id).map((w) => w.id);
-          const seen = setWordIds.filter((id) => seenSet.has(id)).length;
-          const due = setWordIds.filter((id) => dueSet.has(id)).length;
-          return { ...s, total: countBySet[s.id] ?? 0, seen, due };
-        });
-
-        // Add a virtual "Uncategorized" set if there are unassigned words
-        if (uncategorizedIds.length > 0) {
-          const seen = uncategorizedIds.filter((id) => seenSet.has(id)).length;
-          const due = uncategorizedIds.filter((id) => dueSet.has(id)).length;
-          enriched.push({
-            id: '__unset__',
-            name: 'Uncategorized',
-            description: 'Words in this category not yet assigned to a set.',
-            category: category as WordCategory,
-            display_order: 9999,
-            created_at: '',
-            total: uncategorizedIds.length,
-            seen,
-            due,
-          });
-        }
-
-        setSets(enriched);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [user, category, isValidCategory]);
-
-  if (authLoading || loading) {
+  if (authLoading || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
         <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />

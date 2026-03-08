@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -16,6 +16,7 @@ import {
   Award,
   RefreshCcw,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_META, WORD_CATEGORIES, difficultyToCategory } from '@/types';
@@ -37,174 +38,145 @@ interface TopMissedWord {
   correct_count: number;
 }
 
-interface StatsData {
-  totalSessions: number;
-  totalWordsAttempted: number;
-  overallCorrect: number;
-  bestScore: number;
-  averageScore: number;
-  recentSessions: GameSession[];
-  categoryAccuracy: CategoryAccuracy[];
-  topMissed: TopMissedWord[];
-  flashcardStats: UserCategoryProgress[];
-  dueReviewCount: number;
-  masteredCount: number;
-}
-
 export default function StatsPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['stats', user?.id],
+    queryFn: async () => {
+      const [sessionsRes, wordStatsRes, flashcardProgressRes, dueReviewRes] = await Promise.all([
+        supabase
+          .from('game_sessions')
+          .select('id, score, max_score, word_count, created_at, type')
+          .eq('user_id', user!.id)
+          .order('created_at', { ascending: false }),
+
+        supabase
+          .from('user_word_stats')
+          .select('word_id, correct_count, incorrect_count, last_correct')
+          .eq('user_id', user!.id),
+
+        supabase
+          .from('user_category_progress')
+          .select('*')
+          .eq('user_id', user!.id),
+
+        supabase
+          .from('flashcard_reviews')
+          .select('word_id', { count: 'exact', head: true })
+          .eq('user_id', user!.id)
+          .lte('next_review_at', new Date().toISOString()),
+      ]);
+
+      const sessions = (sessionsRes.data ?? []) as GameSession[];
+      const wordStats = wordStatsRes.data ?? [];
+      const flashcardProgress = (flashcardProgressRes.data ?? []) as UserCategoryProgress[];
+      const dueReviewCount = dueReviewRes.count ?? 0;
+
+      const totalSessions = sessions.length;
+      const bestScore = sessions.length > 0 ? Math.max(...sessions.map((s) => s.score)) : 0;
+      const averageScore =
+        sessions.length > 0
+          ? Math.round(sessions.reduce((sum, s) => sum + s.score, 0) / sessions.length)
+          : 0;
+      const recentSessions = sessions.slice(0, 10);
+
+      const totalWordsAttempted = wordStats.reduce((n, s) => n + s.correct_count + s.incorrect_count, 0);
+      const overallCorrect = wordStats.reduce((n, s) => n + s.correct_count, 0);
+
+      const attemptedWordIds = wordStats.map((s) => s.word_id);
+      let categoryAccuracy: CategoryAccuracy[] = WORD_CATEGORIES.map((cat) => ({
+        category: cat, correct: 0, total: 0, accuracy: 0,
+      }));
+
+      if (attemptedWordIds.length > 0) {
+        const { data: wordDiffs } = await supabase
+          .from('words')
+          .select('id, difficulty')
+          .in('id', attemptedWordIds);
+
+        const diffMap = new Map((wordDiffs ?? []).map((w) => [w.id, w.difficulty as number]));
+        const catMap: Record<WordCategory, { correct: number; total: number }> = {
+          survival: { correct: 0, total: 0 },
+          social: { correct: 0, total: 0 },
+          professional: { correct: 0, total: 0 },
+          eloquent: { correct: 0, total: 0 },
+        };
+        for (const stat of wordStats) {
+          const diff = diffMap.get(stat.word_id);
+          if (diff == null) continue;
+          const cat = difficultyToCategory(diff);
+          catMap[cat].correct += stat.correct_count;
+          catMap[cat].total += stat.correct_count + stat.incorrect_count;
+        }
+        categoryAccuracy = WORD_CATEGORIES.map((cat) => ({
+          category: cat,
+          correct: catMap[cat].correct,
+          total: catMap[cat].total,
+          accuracy: catMap[cat].total > 0 ? Math.round((catMap[cat].correct / catMap[cat].total) * 100) : 0,
+        }));
+      }
+
+      const { data: missedRaw } = await supabase
+        .from('user_word_stats')
+        .select('word_id, correct_count, incorrect_count')
+        .eq('user_id', user!.id)
+        .gt('incorrect_count', 0)
+        .order('incorrect_count', { ascending: false })
+        .limit(5);
+
+      const topMissed: TopMissedWord[] = [];
+      if ((missedRaw ?? []).length > 0) {
+        const missedIds = (missedRaw ?? []).map((r) => r.word_id);
+        const { data: missedWordData } = await supabase
+          .from('words')
+          .select('id, word, correct_definition, difficulty')
+          .in('id', missedIds);
+        const wordInfoMap = new Map((missedWordData ?? []).map((w) => [w.id, w]));
+        for (const r of missedRaw ?? []) {
+          const w = wordInfoMap.get(r.word_id);
+          if (w) {
+            topMissed.push({
+              word_id: r.word_id,
+              word: w.word,
+              correct_definition: w.correct_definition,
+              difficulty: w.difficulty,
+              incorrect_count: r.incorrect_count,
+              correct_count: r.correct_count,
+            });
+          }
+        }
+      }
+
+      const { count: masteredCount } = await supabase
+        .from('flashcard_reviews')
+        .select('word_id', { count: 'exact', head: true })
+        .eq('user_id', user!.id)
+        .gte('repetitions', 3);
+
+      return {
+        totalSessions,
+        totalWordsAttempted,
+        overallCorrect,
+        bestScore,
+        averageScore,
+        recentSessions,
+        categoryAccuracy,
+        topMissed,
+        flashcardStats: flashcardProgress,
+        dueReviewCount,
+        masteredCount: masteredCount ?? 0,
+      };
+    },
+    enabled: !!user,
+  });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/');
   }, [user, authLoading, router]);
 
-  useEffect(() => {
-    if (!user) return;
-
-    async function load() {
-      setLoading(true);
-      try {
-        // ── Jam session stats ──────────────────────────────────────────────────
-        const [sessionsRes, wordStatsRes, flashcardProgressRes, dueReviewRes] = await Promise.all([
-          supabase
-            .from('game_sessions')
-            .select('id, score, max_score, word_count, created_at, type')
-            .eq('user_id', user!.id)
-            .order('created_at', { ascending: false }),
-
-          supabase
-            .from('user_word_stats')
-            .select('word_id, correct_count, incorrect_count, last_correct')
-            .eq('user_id', user!.id),
-
-          supabase
-            .from('user_category_progress')
-            .select('*')
-            .eq('user_id', user!.id),
-
-          supabase
-            .from('flashcard_reviews')
-            .select('word_id', { count: 'exact', head: true })
-            .eq('user_id', user!.id)
-            .lte('next_review_at', new Date().toISOString()),
-        ]);
-
-        const sessions = (sessionsRes.data ?? []) as GameSession[];
-        const wordStats = wordStatsRes.data ?? [];
-        const flashcardProgress = (flashcardProgressRes.data ?? []) as UserCategoryProgress[];
-        const dueReviewCount = dueReviewRes.count ?? 0;
-
-        // Aggregate session stats
-        const totalSessions = sessions.length;
-        const bestScore = sessions.length > 0 ? Math.max(...sessions.map((s) => s.score)) : 0;
-        const averageScore =
-          sessions.length > 0
-            ? Math.round(sessions.reduce((sum, s) => sum + s.score, 0) / sessions.length)
-            : 0;
-        const recentSessions = sessions.slice(0, 10);
-
-        // Aggregate word stats
-        const totalWordsAttempted = wordStats.reduce((n, s) => n + s.correct_count + s.incorrect_count, 0);
-        const overallCorrect = wordStats.reduce((n, s) => n + s.correct_count, 0);
-
-        // Category accuracy — fetch difficulty for all words we've attempted
-        const attemptedWordIds = wordStats.map((s) => s.word_id);
-        let categoryAccuracy: CategoryAccuracy[] = WORD_CATEGORIES.map((cat) => ({
-          category: cat, correct: 0, total: 0, accuracy: 0,
-        }));
-
-        if (attemptedWordIds.length > 0) {
-          const { data: wordDiffs } = await supabase
-            .from('words')
-            .select('id, difficulty')
-            .in('id', attemptedWordIds);
-
-          const diffMap = new Map((wordDiffs ?? []).map((w) => [w.id, w.difficulty as number]));
-          const catMap: Record<WordCategory, { correct: number; total: number }> = {
-            survival: { correct: 0, total: 0 },
-            social: { correct: 0, total: 0 },
-            professional: { correct: 0, total: 0 },
-            eloquent: { correct: 0, total: 0 },
-          };
-          for (const stat of wordStats) {
-            const diff = diffMap.get(stat.word_id);
-            if (diff == null) continue;
-            const cat = difficultyToCategory(diff);
-            catMap[cat].correct += stat.correct_count;
-            catMap[cat].total += stat.correct_count + stat.incorrect_count;
-          }
-          categoryAccuracy = WORD_CATEGORIES.map((cat) => ({
-            category: cat,
-            correct: catMap[cat].correct,
-            total: catMap[cat].total,
-            accuracy: catMap[cat].total > 0 ? Math.round((catMap[cat].correct / catMap[cat].total) * 100) : 0,
-          }));
-        }
-
-        // Top missed words
-        const { data: missedRaw } = await supabase
-          .from('user_word_stats')
-          .select('word_id, correct_count, incorrect_count')
-          .eq('user_id', user!.id)
-          .gt('incorrect_count', 0)
-          .order('incorrect_count', { ascending: false })
-          .limit(5);
-
-        const topMissed: TopMissedWord[] = [];
-        if ((missedRaw ?? []).length > 0) {
-          const missedIds = (missedRaw ?? []).map((r) => r.word_id);
-          const { data: missedWordData } = await supabase
-            .from('words')
-            .select('id, word, correct_definition, difficulty')
-            .in('id', missedIds);
-          const wordInfoMap = new Map((missedWordData ?? []).map((w) => [w.id, w]));
-          for (const r of missedRaw ?? []) {
-            const w = wordInfoMap.get(r.word_id);
-            if (w) {
-              topMissed.push({
-                word_id: r.word_id,
-                word: w.word,
-                correct_definition: w.correct_definition,
-                difficulty: w.difficulty,
-                incorrect_count: r.incorrect_count,
-                correct_count: r.correct_count,
-              });
-            }
-          }
-        }
-
-        // Mastered flashcard count (repetitions >= 3)
-        const { count: masteredCount } = await supabase
-          .from('flashcard_reviews')
-          .select('word_id', { count: 'exact', head: true })
-          .eq('user_id', user!.id)
-          .gte('repetitions', 3);
-
-        setStats({
-          totalSessions,
-          totalWordsAttempted,
-          overallCorrect,
-          bestScore,
-          averageScore,
-          recentSessions,
-          categoryAccuracy,
-          topMissed,
-          flashcardStats: flashcardProgress,
-          dueReviewCount,
-          masteredCount: masteredCount ?? 0,
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
-  }, [user]);
-
-  if (authLoading || loading) {
+  if (authLoading || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
         <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />

@@ -14,6 +14,81 @@ export type Database = {
   }
   public: {
     Tables: {
+      flashcard_reviews: {
+        Row: {
+          ease_factor: number
+          interval_days: number
+          last_quality: number | null
+          last_reviewed_at: string | null
+          next_review_at: string
+          repetitions: number
+          user_id: string
+          word_id: string
+        }
+        Insert: {
+          ease_factor?: number
+          interval_days?: number
+          last_quality?: number | null
+          last_reviewed_at?: string | null
+          next_review_at?: string
+          repetitions?: number
+          user_id: string
+          word_id: string
+        }
+        Update: {
+          ease_factor?: number
+          interval_days?: number
+          last_quality?: number | null
+          last_reviewed_at?: string | null
+          next_review_at?: string
+          repetitions?: number
+          user_id?: string
+          word_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flashcard_reviews_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flashcard_reviews_word_id_fkey"
+            columns: ["word_id"]
+            isOneToOne: false
+            referencedRelation: "words"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flashcard_sets: {
+        Row: {
+          category: Database["public"]["Enums"]["word_category"]
+          created_at: string
+          description: string | null
+          display_order: number
+          id: string
+          name: string
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["word_category"]
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          id?: string
+          name: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["word_category"]
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       game_config: {
         Row: {
           difficulty_max: number
@@ -147,6 +222,38 @@ export type Database = {
           },
         ]
       }
+      user_category_progress: {
+        Row: {
+          category: Database["public"]["Enums"]["word_category"]
+          last_studied_at: string | null
+          user_id: string
+          words_mastered: number
+          words_seen: number
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["word_category"]
+          last_studied_at?: string | null
+          user_id: string
+          words_mastered?: number
+          words_seen?: number
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["word_category"]
+          last_studied_at?: string | null
+          user_id?: string
+          words_mastered?: number
+          words_seen?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_category_progress_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_word_stats: {
         Row: {
           correct_count: number
@@ -224,6 +331,7 @@ export type Database = {
           distractors: string[]
           embedding: string | null
           id: string
+          set_id: string | null
           updated_at: string
           word: string
         }
@@ -234,6 +342,7 @@ export type Database = {
           distractors?: string[]
           embedding?: string | null
           id?: string
+          set_id?: string | null
           updated_at?: string
           word: string
         }
@@ -244,10 +353,19 @@ export type Database = {
           distractors?: string[]
           embedding?: string | null
           id?: string
+          set_id?: string | null
           updated_at?: string
           word?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "words_set_id_fkey"
+            columns: ["set_id"]
+            isOneToOne: false
+            referencedRelation: "flashcard_sets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -273,6 +391,10 @@ export type Database = {
       }
     }
     Functions: {
+      difficulty_to_category: {
+        Args: { p_difficulty: number }
+        Returns: Database["public"]["Enums"]["word_category"]
+      }
       get_weak_words: {
         Args: { p_limit?: number; p_threshold?: number; p_user_id: string }
         Returns: {
@@ -313,7 +435,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      word_category: "survival" | "social" | "professional" | "eloquent"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -440,6 +562,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      word_category: ["survival", "social", "professional", "eloquent"],
+    },
   },
 } as const

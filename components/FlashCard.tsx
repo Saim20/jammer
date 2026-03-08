@@ -40,7 +40,7 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, mode
       <div className="flex items-center gap-3">
         <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-300"
+            className="h-full bg-linear-to-r from-violet-500 to-fuchsia-500 transition-all duration-300"
             style={{ width: `${((currentIndex + 1) / totalWords) * 100}%` }}
           />
         </div>
@@ -101,7 +101,7 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, mode
             </div>
 
             {/* Word */}
-            <h2 className="text-4xl sm:text-5xl font-extrabold text-center bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 bg-clip-text text-transparent leading-tight">
+            <h2 className="text-4xl sm:text-5xl font-extrabold text-center bg-linear-to-r from-violet-300 via-fuchsia-300 to-pink-300 bg-clip-text text-transparent leading-tight">
               {word.word}
             </h2>
 

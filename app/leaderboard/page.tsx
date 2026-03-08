@@ -1,47 +1,44 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Trophy, Gamepad2 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import type { LeaderboardEntry } from '@/types';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 export default function LeaderboardPage() {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchLeaderboard = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('leaderboard_ranked')
-      .select('*')
-      .eq('type', 'global')
-      .order('score', { ascending: false })
-      .limit(10);
-
-    if (!error && data) {
-      setEntries(data as LeaderboardEntry[]);
-    }
-    setLoading(false);
-  }, []);
+  const { data: entries = [], isLoading: loading } = useQuery({
+    queryKey: ['leaderboard'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('leaderboard_ranked')
+        .select('*')
+        .eq('type', 'global')
+        .order('score', { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      return (data ?? []) as LeaderboardEntry[];
+    },
+    staleTime: 2 * 60_000,
+  });
 
   useEffect(() => {
-    fetchLeaderboard();
-
-    // Real-time: re-fetch whenever any leaderboard row changes
     const channel = supabase
       .channel('leaderboard-realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'leaderboard' },
-        fetchLeaderboard,
+        () => queryClient.invalidateQueries({ queryKey: ['leaderboard'] }),
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
-  }, [fetchLeaderboard]);
+  }, [queryClient]);
 
   return (
     <div className="min-h-[calc(100vh-64px)] flex flex-col items-center py-12 px-4">

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { BookOpen, Zap, RefreshCw, Target, ChevronRight, Loader2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORY_META, WORD_CATEGORIES, difficultyToCategory } from '@/types';
@@ -13,67 +14,57 @@ export default function LearnPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [dueCount, setDueCount] = useState(0);
-  const [missedCount, setMissedCount] = useState(0);
-  const [progress, setProgress] = useState<Record<WordCategory, UserCategoryProgress>>({} as Record<WordCategory, UserCategoryProgress>);
-  const [categoryTotals, setCategoryTotals] = useState<Record<WordCategory, number>>({} as Record<WordCategory, number>);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['learn', user?.id],
+    queryFn: async () => {
+      const { count: due } = await supabase
+        .from('flashcard_reviews')
+        .select('word_id', { count: 'exact', head: true })
+        .eq('user_id', user!.id)
+        .lte('next_review_at', new Date().toISOString());
+
+      const { count: missed } = await supabase
+        .from('user_word_stats')
+        .select('word_id', { count: 'exact', head: true })
+        .eq('user_id', user!.id)
+        .gt('incorrect_count', 0);
+
+      const { data: progData } = await supabase
+        .from('user_category_progress')
+        .select('*')
+        .eq('user_id', user!.id);
+      const progress = {} as Record<WordCategory, UserCategoryProgress>;
+      for (const row of progData ?? []) {
+        progress[row.category as WordCategory] = row;
+      }
+
+      const { data: wordData } = await supabase.from('words').select('difficulty');
+      const categoryTotals = {} as Record<WordCategory, number>;
+      for (const cat of WORD_CATEGORIES) categoryTotals[cat] = 0;
+      for (const row of wordData ?? []) {
+        categoryTotals[difficultyToCategory(row.difficulty as number)]++;
+      }
+
+      return {
+        dueCount: due ?? 0,
+        missedCount: missed ?? 0,
+        progress,
+        categoryTotals,
+      };
+    },
+    enabled: !!user,
+  });
+
+  const dueCount = data?.dueCount ?? 0;
+  const missedCount = data?.missedCount ?? 0;
+  const progress = data?.progress ?? ({} as Record<WordCategory, UserCategoryProgress>);
+  const categoryTotals = data?.categoryTotals ?? ({} as Record<WordCategory, number>);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/');
   }, [user, authLoading, router]);
 
-  useEffect(() => {
-    if (!user) return;
-    async function load() {
-      setLoading(true);
-      try {
-        // Due reviews count
-        const { count: due } = await supabase
-          .from('flashcard_reviews')
-          .select('word_id', { count: 'exact', head: true })
-          .eq('user_id', user!.id)
-          .lte('next_review_at', new Date().toISOString());
-        setDueCount(due ?? 0);
-
-        // Missed words count (incorrect_count > 0)
-        const { count: missed } = await supabase
-          .from('user_word_stats')
-          .select('word_id', { count: 'exact', head: true })
-          .eq('user_id', user!.id)
-          .gt('incorrect_count', 0);
-        setMissedCount(missed ?? 0);
-
-        // Category progress
-        const { data: progData } = await supabase
-          .from('user_category_progress')
-          .select('*')
-          .eq('user_id', user!.id);
-        const progMap = {} as Record<WordCategory, UserCategoryProgress>;
-        for (const row of progData ?? []) {
-          progMap[row.category as WordCategory] = row;
-        }
-        setProgress(progMap);
-
-        // Total word counts per category (derived from difficulty ranges)
-        const { data: wordData } = await supabase
-          .from('words')
-          .select('difficulty');
-        const totals = {} as Record<WordCategory, number>;
-        for (const cat of WORD_CATEGORIES) totals[cat] = 0;
-        for (const row of wordData ?? []) {
-          const cat = difficultyToCategory(row.difficulty as number);
-          totals[cat]++;
-        }
-        setCategoryTotals(totals);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [user]);
-
-  if (authLoading || loading) {
+  if (authLoading || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
         <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
@@ -87,7 +78,7 @@ export default function LearnPage() {
       <div className="mb-10">
         <div className="flex items-center gap-3 mb-2">
           <BookOpen className="w-8 h-8 text-violet-400" />
-          <h1 className="text-3xl font-extrabold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-extrabold bg-linear-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
             Learning Hub
           </h1>
         </div>
@@ -234,7 +225,7 @@ export default function LearnPage() {
         </div>
         <Link
           href="/game"
-          className="shrink-0 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all hover:scale-[1.03] active:scale-100 text-sm"
+          className="shrink-0 bg-linear-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all hover:scale-[1.03] active:scale-100 text-sm"
         >
           Start a Jam →
         </Link>

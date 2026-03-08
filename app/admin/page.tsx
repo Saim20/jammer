@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus,
@@ -22,6 +22,7 @@ import {
   Hash,
   Gauge,
 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import type { Word, GameConfig, FlashcardSet, WordCategory } from '@/types';
@@ -184,12 +185,59 @@ async function storeEmbedding(id: string, embedding: number[]): Promise<void> {
 export default function AdminPage() {
   const { user, profile, loading: authLoading, isAdmin } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const [tab, setTab] = useState<Tab>('words');
 
-  // ── words list state ──────────────────────────────────────────────────────
-  const [words, setWords] = useState<Word[]>([]);
-  const [loadingWords, setLoadingWords] = useState(true);
+  // ── words / sets / config via TanStack Query ──────────────────────────────
+  const { data: words = [], isLoading: loadingWords } = useQuery({
+    queryKey: ['admin-words'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('words')
+        .select('id, word, correct_definition, distractors, difficulty, category, set_id, created_at, updated_at')
+        .order('word');
+      if (error) throw error;
+      return (data ?? []) as Word[];
+    },
+    enabled: !!user && !!isAdmin,
+  });
+
+  const { data: sets = [], isLoading: setsLoading } = useQuery({
+    queryKey: ['admin-sets'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('flashcard_sets')
+        .select('*')
+        .order('category')
+        .order('display_order');
+      if (error) throw error;
+      return (data ?? []) as FlashcardSet[];
+    },
+    enabled: !!user && !!isAdmin,
+  });
+
+  const { data: fetchedConfig, isLoading: configLoading } = useQuery({
+    queryKey: ['game-config'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('game_config')
+        .select('*')
+        .eq('id', 1)
+        .single();
+      if (error) throw error;
+      return { ...DEFAULT_GAME_CONFIG, ...(data as GameConfig) } as GameConfig;
+    },
+    enabled: !!user && !!isAdmin,
+  });
+
+  // Local editable copy of config for the settings form
+  const [config, setConfig] = useState<GameConfig>(DEFAULT_GAME_CONFIG);
+  useEffect(() => {
+    if (fetchedConfig) setConfig(fetchedConfig);
+  }, [fetchedConfig]);
+
+  // ── non-query UI state ────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'word' | 'difficulty'>('word');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -222,16 +270,12 @@ export default function AdminPage() {
   const [csvEmbedStatus, setCsvEmbedStatus] = useState<'idle' | 'generating' | 'done' | 'error'>('idle');
   const [csvEmbedProgress, setCsvEmbedProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // ── Game config state ─────────────────────────────────────────────────────
-  const [config, setConfig] = useState<GameConfig>(DEFAULT_GAME_CONFIG);
-  const [configLoading, setConfigLoading] = useState(true);
+  // ── config save state ─────────────────────────────────────────────────────
   const [configSaving, setConfigSaving] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
 
-  // ── Sets state ────────────────────────────────────────────────────────────
-  const [sets, setSets] = useState<FlashcardSet[]>([]);
-  const [setsLoading, setSetsLoading] = useState(false);
+  // ── Sets form state ───────────────────────────────────────────────────────
   const [setDraft, setSetDraft] = useState<{ name: string; description: string; category: WordCategory | ''; display_order: number }>({
     name: '', description: '', category: '', display_order: 0,
   });
@@ -245,71 +289,6 @@ export default function AdminPage() {
     if (!authLoading && (!user || !isAdmin)) router.replace('/');
   }, [user, authLoading, isAdmin, router]);
 
-  // ── Fetch words ───────────────────────────────────────────────────────────
-  const fetchWords = useCallback(async () => {
-    setLoadingWords(true);
-    try {
-      const { data, error } = await supabase
-        .from('words')
-        .select('id, word, correct_definition, distractors, difficulty, category, set_id, created_at, updated_at')
-        .order('word');
-      if (error) throw error;
-      setWords((data ?? []) as Word[]);
-    } catch (err) {
-      console.error('Failed to fetch words:', err);
-    } finally {
-      setLoadingWords(false);
-    }
-  }, []);
-
-  // ── Fetch sets ────────────────────────────────────────────────────────────
-  const fetchSets = useCallback(async () => {
-    setSetsLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('flashcard_sets')
-        .select('*')
-        .order('category')
-        .order('display_order');
-      if (error) throw error;
-      setSets((data ?? []) as FlashcardSet[]);
-    } catch (err) {
-      console.error('Failed to fetch sets:', err);
-    } finally {
-      setSetsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (user && isAdmin) {
-      fetchWords();
-      fetchSets();
-    }
-  }, [user, isAdmin, fetchWords, fetchSets]);
-
-  // ── Fetch game config ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!user || !isAdmin) return;
-    async function fetchConfig() {
-      setConfigLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('game_config')
-          .select('*')
-          .eq('id', 1)
-          .single();
-        if (!error && data) {
-          setConfig({ ...DEFAULT_GAME_CONFIG, ...(data as GameConfig) });
-        }
-      } catch (err) {
-        console.error('Failed to load config:', err);
-      } finally {
-        setConfigLoading(false);
-      }
-    }
-    fetchConfig();
-  }, [user, isAdmin]);
-
   async function saveConfig() {
     setConfigSaving(true);
     setConfigError(null);
@@ -319,6 +298,7 @@ export default function AdminPage() {
         .from('game_config')
         .upsert({ id: 1, ...config });
       if (error) throw error;
+      queryClient.setQueryData(['game-config'], config);
       setConfigSaved(true);
       setTimeout(() => setConfigSaved(false), 3000);
     } catch (err) {
@@ -377,10 +357,10 @@ export default function AdminPage() {
         .update(row)
         .eq('id', editingWord.id);
       if (error) throw error;
-      setWords((prev) =>
+      queryClient.setQueryData(['admin-words'], (prev: Word[]) =>
         prev.map((w) =>
           w.id === editingWord.id
-            ? { id: editingWord.id, ...row }
+            ? { id: editingWord.id, ...row } as Word
             : w,
         ),
       );
@@ -401,7 +381,7 @@ export default function AdminPage() {
         .delete()
         .eq('id', id);
       if (error) throw error;
-      setWords((prev) => prev.filter((w) => w.id !== id));
+      queryClient.setQueryData(['admin-words'], (prev: Word[]) => prev.filter((w) => w.id !== id));
     } catch (err) {
       console.error('Delete failed:', err);
     } finally {
@@ -431,7 +411,7 @@ export default function AdminPage() {
       if (error) throw error;
       insertedId = (data as Word).id;
       insertedWord = { word: row.word, correct_definition: row.correct_definition };
-      setWords((prev) =>
+      queryClient.setQueryData(['admin-words'], (prev: Word[]) =>
         [...prev, data as Word].sort((a, b) => a.word.localeCompare(b.word)),
       );
       setAddDraft(EMPTY_DRAFT);
@@ -479,7 +459,9 @@ export default function AdminPage() {
         .select()
         .single();
       if (error) throw error;
-      setSets((prev) => [...prev, data as FlashcardSet].sort((a, b) => a.category.localeCompare(b.category) || a.display_order - b.display_order));
+      queryClient.setQueryData(['admin-sets'], (prev: FlashcardSet[]) =>
+        [...prev, data as FlashcardSet].sort((a, b) => a.category.localeCompare(b.category) || a.display_order - b.display_order),
+      );
       setSetDraft({ name: '', description: '', category: '', display_order: 0 });
       setSetSuccess(true);
       setTimeout(() => setSetSuccess(false), 3000);
@@ -495,7 +477,7 @@ export default function AdminPage() {
     try {
       const { error } = await supabase.from('flashcard_sets').delete().eq('id', id);
       if (error) throw error;
-      setSets((prev) => prev.filter((s) => s.id !== id));
+      queryClient.setQueryData(['admin-sets'], (prev: FlashcardSet[]) => prev.filter((s) => s.id !== id));
     } catch (err) {
       console.error('Delete set failed:', err);
     } finally {
@@ -568,7 +550,7 @@ export default function AdminPage() {
                 .single();
               if (!setErr && newSet) {
                 resolvedSetId = (newSet as FlashcardSet).id;
-                setSets((prev) => [...prev, newSet as FlashcardSet]);
+                queryClient.setQueryData(['admin-sets'], (prev: FlashcardSet[]) => [...prev, newSet as FlashcardSet]);
               }
             }
             if (resolvedSetId) setCache.set(row.set_name, resolvedSetId);
@@ -587,7 +569,7 @@ export default function AdminPage() {
           .select()
           .single();
         if (error) throw error;
-        setWords((prev) =>
+        queryClient.setQueryData(['admin-words'], (prev: Word[]) =>
           [...prev, data as Word].sort((a, b) => a.word.localeCompare(b.word)),
         );
         inserted.push({
@@ -1090,7 +1072,7 @@ export default function AdminPage() {
                           <td className="px-4 py-3 text-gray-300">
                             <span className="text-sm">{meta.emoji} {meta.label}</span>
                           </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px] truncate hidden md:table-cell">
+                          <td className="px-4 py-3 text-gray-500 text-xs max-w-50 truncate hidden md:table-cell">
                             {s.description ?? '—'}
                           </td>
                           <td className="px-4 py-3 text-gray-500 text-xs">{s.display_order}</td>
@@ -1519,7 +1501,7 @@ function WordForm({ draft, onChange, onSubmit, saving, error, submitLabel, submi
             className={inputCls}
           />
         </div>
-        <div className="flex items-end pb-0.5 flex-col gap-1 items-start">
+        <div className="flex pb-0.5 flex-col gap-1 items-start">
           <DifficultyBadge value={draft.difficulty} />
           <span className="text-xs text-gray-500">
             → {CATEGORY_META[derivedCategory].emoji} {CATEGORY_META[derivedCategory].label}
