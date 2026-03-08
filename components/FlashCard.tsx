@@ -16,6 +16,8 @@ interface Props {
   onSkip?: () => void;
   /** Optional: show context label (e.g. "Review" or "New"). */
   mode?: 'learn' | 'review' | 'missed';
+  /** SM-2 quality from the last review session (0–5), if available. */
+  lastQuality?: number | null;
 }
 
 const RATINGS: { quality: ReviewQuality; label: string; sublabel: string; key: string; color: string }[] = [
@@ -25,19 +27,19 @@ const RATINGS: { quality: ReviewQuality; label: string; sublabel: string; key: s
   { quality: 5, label: 'Easy',   sublabel: 'instant',       key: '4', color: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30' },
 ];
 
-export default function FlashCard({ word, currentIndex, totalWords, onRate, onSkip, mode }: Props) {
+export default function FlashCard({ word, currentIndex, totalWords, onRate, onSkip, mode, lastQuality }: Props) {
   const [flipped, setFlipped] = useState(false);
 
   const categoryMeta = CATEGORY_META[difficultyToCategory(word.difficulty)];
 
-  // Keyboard shortcuts: Space/Enter = flip, 1–4 = rate after flip
+  // Keyboard shortcuts: Space/Enter = toggle flip, 1–4 = rate when showing back
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       // Ignore when focus is inside an input/textarea
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
-        if (!flipped) setFlipped(true);
+        setFlipped((f) => !f);
       } else if (flipped) {
         const rating = RATINGS.find((r) => r.key === e.key);
         if (rating) {
@@ -55,6 +57,11 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, onSk
     setFlipped(false);
     // Small delay so the flip-back animation plays before parent removes the card
     setTimeout(() => onRate(quality), 150);
+  }
+
+  function handleFlipBack(e: React.MouseEvent) {
+    e.stopPropagation();
+    setFlipped(false);
   }
 
   return (
@@ -76,7 +83,7 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, onSk
       <div
         className="relative cursor-pointer select-none"
         style={{ perspective: '1200px' }}
-        onClick={() => !flipped && setFlipped(true)}
+        onClick={() => setFlipped((f) => !f)}
       >
         <div
           className="relative transition-transform duration-500"
@@ -128,8 +135,23 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, onSk
               {word.word}
             </h2>
 
-            {/* Tap hint */}
-            <p className="text-sm text-gray-600 mt-2 animate-pulse">tap to reveal →</p>
+            {/* Tap hint + last quality */}
+            <div className="flex items-center gap-3 mt-2">
+              <p className="text-sm text-gray-600 animate-pulse">tap to reveal →</p>
+              {lastQuality != null && (
+                <span
+                  title={`Previous rating: ${lastQuality >= 5 ? 'Easy' : lastQuality >= 4 ? 'Good' : lastQuality >= 3 ? 'Hard' : 'Again'}`}
+                  className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                    lastQuality >= 5 ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10' :
+                    lastQuality >= 4 ? 'border-blue-500/50 text-blue-300 bg-blue-500/10' :
+                    lastQuality >= 3 ? 'border-orange-500/50 text-orange-300 bg-orange-500/10' :
+                    'border-red-500/50 text-red-300 bg-red-500/10'
+                  }`}
+                >
+                  Last: {lastQuality >= 5 ? 'Easy' : lastQuality >= 4 ? 'Good' : lastQuality >= 3 ? 'Hard' : 'Again'}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* ── Back (definition) ────────────────────────────────── */}
@@ -153,6 +175,8 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, onSk
                 ))}
               </ul>
             </div>
+
+            <p className="text-xs text-gray-600 mt-1 animate-pulse self-center">tap to flip back ↩</p>
           </div>
         </div>
       </div>
@@ -173,14 +197,22 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, onSk
               </button>
             ))}
           </div>
-          {onSkip && (
+          <div className="flex gap-2">
             <button
-              onClick={onSkip}
-              className="w-full text-xs text-gray-600 hover:text-gray-400 transition-colors py-1"
+              onClick={handleFlipBack}
+              className="flex-1 rounded-xl border border-gray-700 bg-gray-800 hover:bg-gray-750 text-gray-400 py-2 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
             >
-              skip →
+              ↩ Flip back <span className="font-mono text-gray-600">[Space]</span>
             </button>
-          )}
+            {onSkip && (
+              <button
+                onClick={onSkip}
+                className="flex-1 text-xs text-gray-600 hover:text-gray-400 transition-colors py-1"
+              >
+                skip →
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2">

@@ -8,8 +8,6 @@ interface GameBoardProps {
   selectedAnswer: string | null;
   isCorrect: boolean | null;
   onSelect: (choice: string) => void;
-  currentIndex: number;
-  totalWords: number;
 }
 
 export default function GameBoard({
@@ -18,8 +16,6 @@ export default function GameBoard({
   selectedAnswer,
   isCorrect,
   onSelect,
-  currentIndex,
-  totalWords,
 }: GameBoardProps) {
   function getButtonClass(choice: string): string {
     const base =
@@ -50,38 +46,17 @@ export default function GameBoard({
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-6">
-      {/* Progress pips */}
-      <div className="flex items-center justify-between text-xs text-gray-500 uppercase tracking-wide">
-        <span>
-          Word {currentIndex + 1} / {totalWords}
-        </span>
-        <div className="flex gap-1.5">
-          {Array.from({ length: totalWords }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 w-7 rounded-full transition-colors ${
-                i < currentIndex
-                  ? 'bg-violet-600'
-                  : i === currentIndex
-                    ? 'bg-violet-300'
-                    : 'bg-gray-700'
-              }`}
-            />
-          ))}
-        </div>
-      </div>
-
+    <div className="w-full max-w-2xl mx-auto space-y-4 sm:space-y-6">
       {/* Word card */}
-      <div className="text-center py-10 px-6 bg-gray-800/60 border border-gray-700 rounded-3xl shadow-xl shadow-black/30">
-        <p className="text-xs font-semibold uppercase tracking-widest text-violet-400 mb-4">
+      <div className="text-center py-8 sm:py-10 px-4 sm:px-6 bg-gray-800/60 border border-gray-700 rounded-3xl shadow-xl shadow-black/30">
+        <p className="text-xs font-semibold uppercase tracking-widest text-violet-400 mb-3 sm:mb-4">
           What does this word mean?
         </p>
-        <h2 className="text-5xl sm:text-6xl font-extrabold tracking-tight bg-linear-to-br from-white to-gray-400 bg-clip-text text-transparent">
+        <h2 className="text-4xl sm:text-6xl font-extrabold tracking-tight bg-linear-to-br from-white to-gray-400 bg-clip-text text-transparent">
           {word.word}
         </h2>
         {/* Difficulty dots */}
-        <div className="mt-4 flex justify-center gap-1" title={`Difficulty: ${word.difficulty}/10`}>
+        <div className="mt-3 sm:mt-4 flex justify-center gap-1" title={`Difficulty: ${word.difficulty}/10`}>
           {Array.from({ length: 10 }).map((_, i) => (
             <div
               key={i}
@@ -94,7 +69,7 @@ export default function GameBoard({
       </div>
 
       {/* Answer options */}
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4">
         {choices.map((choice, i) => (
           <button
             key={i}
