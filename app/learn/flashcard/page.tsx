@@ -32,6 +32,7 @@ function FlashcardPage() {
   const [phase, setPhase] = useState<'loading' | 'studying' | 'done'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [savingReview, setSavingReview] = useState(false);
+  const [qualityMap, setQualityMap] = useState<Map<string, number | null>>(new Map());
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/');
@@ -43,6 +44,7 @@ function FlashcardPage() {
     setError(null);
     setResults([]);
     setCurrentIndex(0);
+    setQualityMap(new Map());
 
     try {
       let loaded: Word[] = [];
@@ -110,11 +112,11 @@ function FlashcardPage() {
         // Fetch existing reviews to sort (unseen first)
         const { data: reviews } = await supabase
           .from('flashcard_reviews')
-          .select('word_id, next_review_at, repetitions')
+          .select('word_id, next_review_at, repetitions, last_quality')
           .eq('user_id', user.id)
           .in('word_id', wordIds);
 
-        const reviewMap = new Map<string, { next_review_at: string; repetitions: number }>();
+        const reviewMap = new Map<string, { next_review_at: string; repetitions: number; last_quality: number | null }>();
         for (const r of reviews ?? []) reviewMap.set(r.word_id, r);
 
         // Sort: unseen first (no review record), then by next_review_at ascending
@@ -127,6 +129,11 @@ function FlashcardPage() {
           return ra.next_review_at < rb.next_review_at ? -1 : 1;
         });
         loaded = sorted;
+
+        // Build quality map from review data for personalised badge display
+        const qMap = new Map<string, number | null>();
+        for (const [wid, r] of reviewMap) qMap.set(wid, r.last_quality);
+        setQualityMap(qMap);
       }
 
       if (loaded.length === 0) {
@@ -298,6 +305,7 @@ function FlashcardPage() {
           onRate={handleRate}
           onSkip={handleSkip}
           mode={modeParam}
+          lastQuality={qualityMap.get(currentWord.id) ?? null}
         />
       )}
 

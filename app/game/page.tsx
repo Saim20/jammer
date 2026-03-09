@@ -273,44 +273,62 @@ export default function GamePage() {
   if (!currentWord) return <Spinner />;
 
   return (
-    <div className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center px-4 py-8">
-      {/* HUD: score + timer */}
-      <div className="w-full max-w-2xl mb-6 flex items-center justify-between gap-4">
-        <div className="text-sm text-gray-400 shrink-0">
-          Score:{' '}
-          <span className="text-white font-bold text-lg tabular-nums">{score}</span>
+    <div className="min-h-[calc(100vh-64px)] flex flex-col">
+      {/* ── Sticky HUD: score · progress · timer ── */}
+      <div className="sticky top-0 z-10 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800">
+        <div className="w-full max-w-2xl mx-auto px-4 py-2 flex flex-col gap-1.5">
+          {/* Score + timer row */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-sm text-gray-400 shrink-0">
+              Score:{' '}
+              <span className="text-white font-bold text-base sm:text-lg tabular-nums">{score}</span>
+            </div>
+            <CountdownTimer timeLeft={timeLeft} totalTime={config.timer_seconds} />
+          </div>
+          {/* Progress bar row */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 shrink-0 tabular-nums">
+              {currentIndex + 1} / {words.length}
+            </span>
+            <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-linear-to-r from-violet-500 to-fuchsia-500 transition-all duration-300"
+                style={{ width: `${((currentIndex + 1) / words.length) * 100}%` }}
+              />
+            </div>
+          </div>
         </div>
-        <CountdownTimer timeLeft={timeLeft} totalTime={config.timer_seconds} />
       </div>
 
-      <GameBoard
-        word={currentWord}
-        choices={choices}
-        selectedAnswer={selectedAnswer}
-        isCorrect={isCorrect}
-        onSelect={handleAnswer}
-        currentIndex={currentIndex}
-        totalWords={words.length}
-      />
+      {/* ── Game content ── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
+        <GameBoard
+          word={currentWord}
+          choices={choices}
+          selectedAnswer={selectedAnswer}
+          isCorrect={isCorrect}
+          onSelect={handleAnswer}
+        />
 
-      {/* Feedback banner */}
-      {phase === 'feedback' && (
-        <div
-          className={`mt-6 px-6 py-3 rounded-xl font-semibold text-sm transition-all ${
-            isCorrect
-              ? 'bg-emerald-950 border border-emerald-600 text-emerald-300'
-              : 'bg-red-950 border border-red-700 text-red-300'
-          }`}
-        >
-          {isCorrect ? (
-            <>✓ Correct! +{100 + timeLeft * 10} pts</>
-          ) : selectedAnswer === '__timeout__' ? (
-            <>⏰ Time&apos;s up! &quot;{currentWord.correct_definition}&quot;</>
-          ) : (
-            <>✗ Incorrect. &quot;{currentWord.correct_definition}&quot;</>
-          )}
-        </div>
-      )}
+        {/* Feedback banner */}
+        {phase === 'feedback' && (
+          <div
+            className={`mt-4 sm:mt-6 px-4 sm:px-6 py-3 rounded-xl font-semibold text-sm transition-all ${
+              isCorrect
+                ? 'bg-emerald-950 border border-emerald-600 text-emerald-300'
+                : 'bg-red-950 border border-red-700 text-red-300'
+            }`}
+          >
+            {isCorrect ? (
+              <>✓ Correct! +{100 + timeLeft * 10} pts</>
+            ) : selectedAnswer === '__timeout__' ? (
+              <>⏰ Time&apos;s up! &quot;{currentWord.correct_definition}&quot;</>
+            ) : (
+              <>✗ Incorrect. &quot;{currentWord.correct_definition}&quot;</>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
