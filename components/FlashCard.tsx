@@ -164,19 +164,20 @@ export default function FlashCard({ word, currentIndex, totalWords, onRate, onSk
               <p className="text-xl text-gray-100 font-medium leading-relaxed">{word.correct_definition}</p>
             </div>
 
-            <div>
-              <p className="text-xs text-gray-600 font-semibold uppercase tracking-widest mb-2">Distractors</p>
-              <ul className="flex flex-col gap-1.5">
-                {word.distractors.map((d, i) => (
-                  <li key={i} className="text-sm text-gray-500 flex items-start gap-2">
-                    <span className="text-gray-700 shrink-0">✗</span>
-                    <span>{d}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <p className="text-xs text-gray-600 mt-1 animate-pulse self-center">tap to flip back ↩</p>
+            {word.example_sentences && word.example_sentences.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-600 font-semibold uppercase tracking-widest mb-2">Examples</p>
+                <ul className="flex flex-col gap-2">
+                  {word.example_sentences.map((s, i) => (
+                    <li key={i} className="text-sm text-gray-400 italic leading-relaxed flex items-start gap-2">
+                      <span className="text-gray-600 shrink-0 not-italic">&ldquo;</span>
+                      <span>{s}</span>
+                      <span className="text-gray-600 shrink-0 not-italic">&rdquo;</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </div>

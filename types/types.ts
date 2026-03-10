@@ -329,6 +329,7 @@ export type Database = {
           created_at: string
           difficulty: number
           distractors: string[]
+          example_sentences: string[]
           embedding: string | null
           id: string
           set_id: string | null
@@ -340,6 +341,7 @@ export type Database = {
           created_at?: string
           difficulty: number
           distractors?: string[]
+          example_sentences?: string[]
           embedding?: string | null
           id?: string
           set_id?: string | null
@@ -351,6 +353,7 @@ export type Database = {
           created_at?: string
           difficulty?: number
           distractors?: string[]
+          example_sentences?: string[]
           embedding?: string | null
           id?: string
           set_id?: string | null

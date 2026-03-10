@@ -38,6 +38,9 @@ interface WordDraft {
   distractor1: string;
   distractor2: string;
   distractor3: string;
+  exampleSentence1: string;
+  exampleSentence2: string;
+  exampleSentence3: string;
   difficulty: number;
   set_id: string;
 }
@@ -48,6 +51,9 @@ const EMPTY_DRAFT: WordDraft = {
   distractor1: '',
   distractor2: '',
   distractor3: '',
+  exampleSentence1: '',
+  exampleSentence2: '',
+  exampleSentence3: '',
   difficulty: 5,
   set_id: '',
 };
@@ -58,6 +64,9 @@ interface CSVRow {
   distractor1: string;
   distractor2: string;
   distractor3: string;
+  exampleSentence1: string;
+  exampleSentence2: string;
+  exampleSentence3: string;
   difficulty: number;
   set_name: string;
   _valid: boolean;
@@ -100,7 +109,7 @@ function parseCSV(text: string): CSVRow[] {
   // Accept headers case-insensitively, ignore header row
   return lines.slice(1).map((line) => {
     const cols = parseCSVLine(line);
-    const [word, correctDefinition, distractor1, distractor2, distractor3, diffStr, setNameStr] = cols;
+    const [word, correctDefinition, distractor1, distractor2, distractor3, diffStr, setNameStr, ex1, ex2, ex3] = cols;
     const difficulty = parseInt(diffStr ?? '', 10);
 
     const missing: string[] = [];
@@ -120,6 +129,9 @@ function parseCSV(text: string): CSVRow[] {
       distractor1: distractor1 ?? '',
       distractor2: distractor2 ?? '',
       distractor3: distractor3 ?? '',
+      exampleSentence1: (ex1 ?? '').trim(),
+      exampleSentence2: (ex2 ?? '').trim(),
+      exampleSentence3: (ex3 ?? '').trim(),
       difficulty: diffValid ? difficulty : 5,
       set_name: (setNameStr ?? '').trim(),
       _valid,
@@ -133,14 +145,17 @@ function draftToRow(d: WordDraft) {
     word: d.word.trim(),
     correct_definition: d.correctDefinition.trim(),
     distractors: [d.distractor1.trim(), d.distractor2.trim(), d.distractor3.trim()],
+    example_sentences: [d.exampleSentence1, d.exampleSentence2, d.exampleSentence3]
+      .map((s) => s.trim())
+      .filter(Boolean),
     difficulty: d.difficulty,
     set_id: d.set_id || null,
   };
 }
 
 const CSV_TEMPLATE =
-  'word,correctDefinition,distractor1,distractor2,distractor3,difficulty,set_name\n' +
-  'Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",9,"Literary Devices"\n';
+  'word,correctDefinition,distractor1,distractor2,distractor3,difficulty,set_name,exampleSentence1,exampleSentence2,exampleSentence3\n' +
+  'Ephemeral,"Lasting for a very short time","Having a glowing quality","A deep philosophical thought","Showing warlike attitude",9,"Literary Devices","The ephemeral beauty of cherry blossoms makes them all the more precious.","Her fame proved ephemeral, fading within a year.",""\n';
 
 // ── Embedding helpers ─────────────────────────────────────────────────────────
 // These are module-level (no component state) so they can be called anywhere.
@@ -183,7 +198,7 @@ async function storeEmbedding(id: string, embedding: number[]): Promise<void> {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const { user, profile, loading: authLoading, isAdmin } = useAuth();
+  const { user, profile, loading: authLoading, profileLoading, isAdmin } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -195,7 +210,7 @@ export default function AdminPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('words')
-        .select('id, word, correct_definition, distractors, difficulty, set_id, created_at, updated_at')
+        .select('id, word, correct_definition, distractors, example_sentences, difficulty, set_id, created_at, updated_at')
         .order('word');
       if (error) throw error;
       return (data ?? []) as Word[];
@@ -286,8 +301,8 @@ export default function AdminPage() {
 
   // ── Auth guard ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!authLoading && (!user || !isAdmin)) router.replace('/');
-  }, [user, authLoading, isAdmin, router]);
+    if (!authLoading && !profileLoading && (!user || !isAdmin)) router.replace('/');
+  }, [user, authLoading, profileLoading, isAdmin, router]);
 
   async function saveConfig() {
     setConfigSaving(true);
@@ -338,6 +353,9 @@ export default function AdminPage() {
       distractor1: w.distractors[0] ?? '',
       distractor2: w.distractors[1] ?? '',
       distractor3: w.distractors[2] ?? '',
+      exampleSentence1: w.example_sentences?.[0] ?? '',
+      exampleSentence2: w.example_sentences?.[1] ?? '',
+      exampleSentence3: w.example_sentences?.[2] ?? '',
       difficulty: w.difficulty,
       set_id: w.set_id ?? '',
     });
@@ -563,6 +581,8 @@ export default function AdminPage() {
             word: row.word,
             correct_definition: row.correctDefinition,
             distractors: [row.distractor1, row.distractor2, row.distractor3],
+            example_sentences: [row.exampleSentence1, row.exampleSentence2, row.exampleSentence3]
+              .filter(Boolean),
             difficulty: row.difficulty,
             set_id: resolvedSetId,
           })
@@ -624,7 +644,7 @@ export default function AdminPage() {
   }
 
   // ── Loading / access states ───────────────────────────────────────────────
-  if (authLoading) return <Spinner />;
+  if (authLoading || profileLoading) return <Spinner />;
   if (!user || !isAdmin) return null;
 
   return (
@@ -819,8 +839,8 @@ export default function AdminPage() {
                   Required columns:{' '}
                   <code className="text-violet-400">word, correctDefinition, distractor1, distractor2, distractor3, difficulty</code>
                   <br />
-                  Optional column:{' '}
-                  <code className="text-violet-400">set_name</code>
+                  Optional columns:{' '}
+                  <code className="text-violet-400">set_name, exampleSentence1, exampleSentence2, exampleSentence3</code>
                   {' '}— category is derived automatically from difficulty (1–3=Survival, 4–6=Social, 7–8=Professional, 9–10=Eloquent)
                 </p>
               </div>
@@ -1480,6 +1500,36 @@ function WordForm({ draft, onChange, onSubmit, saving, error, submitLabel, submi
             value={draft.distractor3}
             onChange={(e) => field('distractor3', e.target.value)}
             placeholder="Wrong answer option 3…"
+            rows={2}
+            className={inputCls + ' resize-none'}
+          />
+        </div>
+        <div className="col-span-2">
+          <Label>Example Sentence 1 <span className="text-gray-600 font-normal">(optional)</span></Label>
+          <textarea
+            value={draft.exampleSentence1}
+            onChange={(e) => field('exampleSentence1', e.target.value)}
+            placeholder="e.g. The ephemeral beauty of cherry blossoms…"
+            rows={2}
+            className={inputCls + ' resize-none'}
+          />
+        </div>
+        <div className="col-span-2">
+          <Label>Example Sentence 2 <span className="text-gray-600 font-normal">(optional)</span></Label>
+          <textarea
+            value={draft.exampleSentence2}
+            onChange={(e) => field('exampleSentence2', e.target.value)}
+            placeholder="e.g. Her fame proved ephemeral, fading within a year…"
+            rows={2}
+            className={inputCls + ' resize-none'}
+          />
+        </div>
+        <div className="col-span-2">
+          <Label>Example Sentence 3 <span className="text-gray-600 font-normal">(optional)</span></Label>
+          <textarea
+            value={draft.exampleSentence3}
+            onChange={(e) => field('exampleSentence3', e.target.value)}
+            placeholder="A third example in context…"
             rows={2}
             className={inputCls + ' resize-none'}
           />

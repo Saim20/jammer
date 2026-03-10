@@ -7,6 +7,7 @@ create table if not exists public.words (
   word               text        not null,
   correct_definition text        not null,
   distractors        text[]      not null default '{}',
+  example_sentences  text[]      not null default '{}',
   difficulty         integer     not null check (difficulty between 1 and 10),
   -- AI / vector search support.
   -- Populate via scripts/seed-supabase.mjs using Google Gemini gemini-embedding-001
@@ -20,7 +21,8 @@ create table if not exists public.words (
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
   constraint words_word_unique unique (word),
-  constraint distractors_count check (cardinality(distractors) = 3)
+  constraint distractors_count check (cardinality(distractors) = 3),
+  constraint example_sentences_count check (cardinality(example_sentences) <= 3)
 );
 
 create trigger words_updated_at

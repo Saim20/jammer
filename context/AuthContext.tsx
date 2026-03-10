@@ -17,6 +17,7 @@ interface AuthContextType {
   session: Session | null;
   profile: UserProfile | null;
   loading: boolean;
+  profileLoading: boolean;
   isAdmin: boolean;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -27,6 +28,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   profile: null,
   loading: true,
+  profileLoading: false,
   isAdmin: false,
   signInWithGoogle: async () => {},
   logout: async () => {},
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
   const router = useRouter();
 
   async function fetchProfile(userId: string) {
@@ -53,29 +56,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    // Restore session on mount (also handles implicit OAuth hash on redirect return)
+    // getSession() reads from localStorage — clears loading immediately
+    // without blocking on a network round-trip.
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      setLoading(false); // auth state is known — unblock page guards immediately
       if (session?.user) {
-        fetchProfile(session.user.id).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
+        setProfileLoading(true);
+        fetchProfile(session.user.id).finally(() => setProfileLoading(false));
       }
     });
 
-    // Keep auth state in sync
+    // onAuthStateChange handles post-init events: SIGNED_IN, SIGNED_OUT,
+    // TOKEN_REFRESHED, etc. INITIAL_SESSION is skipped because getSession()
+    // already resolved the initial state.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'INITIAL_SESSION') return;
       setSession(session);
       setUser(session?.user ?? null);
+      setLoading(false);
       if (session?.user) {
+        setProfileLoading(true);
         await fetchProfile(session.user.id);
+        setProfileLoading(false);
       } else {
         setProfile(null);
+        setProfileLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -107,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = profile?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, isAdmin, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, profileLoading, isAdmin, signInWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );
