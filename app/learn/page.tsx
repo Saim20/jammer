@@ -92,11 +92,10 @@ export default function LearnPage() {
         {/* Due reviews */}
         <Link
           href="/learn/flashcard?mode=review"
-          className={`group relative rounded-2xl border p-5 flex items-start gap-4 transition-all hover:scale-[1.02] active:scale-100 ${
-            dueCount > 0
+          className={`group relative rounded-2xl border p-5 flex items-start gap-4 transition-all hover:scale-[1.02] active:scale-100 ${dueCount > 0
               ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/15'
               : 'border-gray-700 bg-gray-900 opacity-60 pointer-events-none'
-          }`}
+            }`}
         >
           <div className="p-2.5 rounded-xl bg-blue-500/20 shrink-0">
             <RefreshCw className="w-5 h-5 text-blue-300" />
@@ -120,11 +119,10 @@ export default function LearnPage() {
         {/* Missed words */}
         <Link
           href="/learn/flashcard?mode=missed"
-          className={`group relative rounded-2xl border p-5 flex items-start gap-4 transition-all hover:scale-[1.02] active:scale-100 ${
-            missedCount > 0
+          className={`group relative rounded-2xl border p-5 flex items-start gap-4 transition-all hover:scale-[1.02] active:scale-100 ${missedCount > 0
               ? 'border-red-500/50 bg-red-500/10 hover:bg-red-500/15'
               : 'border-gray-700 bg-gray-900 opacity-60 pointer-events-none'
-          }`}
+            }`}
         >
           <div className="p-2.5 rounded-xl bg-red-500/20 shrink-0">
             <Target className="w-5 h-5 text-red-300" />
@@ -146,6 +144,26 @@ export default function LearnPage() {
         </Link>
       </div>
 
+      {/* Start a Jam CTA */}
+      <div className="relative rounded-2xl border border-violet-500/50 bg-linear-to-r from-violet-950/80 to-fuchsia-950/80 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 overflow-hidden mb-10">
+        <div className="absolute inset-0 bg-linear-to-r from-violet-600/10 to-fuchsia-600/10 pointer-events-none" />
+        <div className="flex items-center gap-3 relative">
+          <div className="p-2 rounded-xl bg-yellow-400/15 shrink-0">
+            <Zap className="w-6 h-6 text-yellow-400" />
+          </div>
+          <div>
+            <p className="font-bold text-white text-base">Ready to Jam?</p>
+            <p className="text-sm text-gray-300">Race the clock, score points, climb the leaderboard.</p>
+          </div>
+        </div>
+        <Link
+          href="/game"
+          className="relative shrink-0 bg-linear-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-semibold px-7 py-3 rounded-xl transition-all hover:scale-[1.04] active:scale-100 text-sm shadow-lg shadow-violet-900/50"
+        >
+          Start a Jam →
+        </Link>
+      </div>
+
       {/* Category cards */}
       <h2 className="text-lg font-bold text-gray-200 mb-4">Categories</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-10">
@@ -159,21 +177,21 @@ export default function LearnPage() {
 
           const colorMap: Record<string, string> = {
             emerald: 'border-emerald-500/40 hover:bg-emerald-500/10',
-            sky:     'border-sky-500/40 hover:bg-sky-500/10',
-            violet:  'border-violet-500/40 hover:bg-violet-500/10',
-            amber:   'border-amber-500/40 hover:bg-amber-500/10',
+            sky: 'border-sky-500/40 hover:bg-sky-500/10',
+            violet: 'border-violet-500/40 hover:bg-violet-500/10',
+            amber: 'border-amber-500/40 hover:bg-amber-500/10',
           };
           const barMap: Record<string, string> = {
             emerald: 'bg-emerald-400',
-            sky:     'bg-sky-400',
-            violet:  'bg-violet-400',
-            amber:   'bg-amber-400',
+            sky: 'bg-sky-400',
+            violet: 'bg-violet-400',
+            amber: 'bg-amber-400',
           };
           const textMap: Record<string, string> = {
             emerald: 'text-emerald-300',
-            sky:     'text-sky-300',
-            violet:  'text-violet-300',
-            amber:   'text-amber-300',
+            sky: 'text-sky-300',
+            violet: 'text-violet-300',
+            amber: 'text-amber-300',
           };
 
           return (
@@ -212,23 +230,6 @@ export default function LearnPage() {
             </Link>
           );
         })}
-      </div>
-
-      {/* Start a Jam CTA */}
-      <div className="rounded-2xl border border-gray-700 bg-gray-900/50 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Zap className="w-6 h-6 text-yellow-400 shrink-0" />
-          <div>
-            <p className="font-semibold text-white">Ready to Jam?</p>
-            <p className="text-sm text-gray-400">Race the clock, score points, climb the leaderboard.</p>
-          </div>
-        </div>
-        <Link
-          href="/game"
-          className="shrink-0 bg-linear-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all hover:scale-[1.03] active:scale-100 text-sm"
-        >
-          Start a Jam →
-        </Link>
       </div>
     </div>
   );
