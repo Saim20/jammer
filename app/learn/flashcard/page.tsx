@@ -12,6 +12,15 @@ import type { Word, WordCategory } from '@/types';
 
 type Mode = 'learn' | 'review' | 'missed';
 
+function fisherYatesShuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 interface WordResult {
   word_id: string;
   quality: ReviewQuality;
@@ -58,9 +67,20 @@ function FlashcardPage() {
         if (rpcErr) throw rpcErr;
         let rows = (data ?? []) as Word[];
         if (setId) rows = rows.filter((w) => w.set_id === setId);
-        // Filter by category = difficultyToCategory(difficulty)
         if (categoryParam) rows = rows.filter((w) => difficultyToCategory(w.difficulty) === categoryParam);
         loaded = rows;
+
+        // Fetch last_quality for badge display
+        if (loaded.length > 0) {
+          const { data: reviewData } = await supabase
+            .from('flashcard_reviews')
+            .select('word_id, last_quality')
+            .eq('user_id', user.id)
+            .in('word_id', loaded.map((w) => w.id));
+          const qMap = new Map<string, number | null>();
+          for (const r of reviewData ?? []) qMap.set(r.word_id, r.last_quality);
+          setQualityMap(qMap);
+        }
 
       } else if (modeParam === 'missed') {
         // Words missed in game sessions — fetch via user_word_stats
@@ -87,17 +107,26 @@ function FlashcardPage() {
         const countMap = new Map((statsData ?? []).map((r) => [r.word_id, r.incorrect_count]));
         loaded = (missedWords ?? []).sort((a, b) => (countMap.get(b.id) ?? 0) - (countMap.get(a.id) ?? 0));
 
+        // Fetch last_quality for badge display
+        if (loaded.length > 0) {
+          const { data: reviewData } = await supabase
+            .from('flashcard_reviews')
+            .select('word_id, last_quality')
+            .eq('user_id', user.id)
+            .in('word_id', loaded.map((w) => w.id));
+          const qMap = new Map<string, number | null>();
+          for (const r of reviewData ?? []) qMap.set(r.word_id, r.last_quality);
+          setQualityMap(qMap);
+        }
+
       } else {
-        // 'learn' mode: fetch words for set/category, new ones first
+        // 'learn' mode: personalized + randomized order
         let wordQuery = supabase.from('words').select('*');
         if (setId) {
           wordQuery = wordQuery.eq('set_id', setId);
         } else if (categoryParam) {
           const [diffMin, diffMax] = CATEGORY_DIFFICULTY_RANGE[categoryParam];
           wordQuery = wordQuery.gte('difficulty', diffMin).lte('difficulty', diffMax);
-        } else {
-          // No filter — shouldn't normally happen; use a reasonable default
-          wordQuery = wordQuery.limit(20);
         }
         const { data: allWords, error: wErr } = await wordQuery;
         if (wErr) throw wErr;
@@ -109,31 +138,40 @@ function FlashcardPage() {
           return;
         }
 
-        // Fetch existing reviews to sort (unseen first)
+        // Fetch review data for personalization
         const { data: reviews } = await supabase
           .from('flashcard_reviews')
-          .select('word_id, next_review_at, repetitions, last_quality')
+          .select('word_id, next_review_at, repetitions, last_quality, ease_factor')
           .eq('user_id', user.id)
           .in('word_id', wordIds);
 
-        const reviewMap = new Map<string, { next_review_at: string; repetitions: number; last_quality: number | null }>();
+        const reviewMap = new Map<string, { next_review_at: string; repetitions: number; last_quality: number | null; ease_factor: number }>();
         for (const r of reviews ?? []) reviewMap.set(r.word_id, r);
 
-        // Sort: unseen first (no review record), then by next_review_at ascending
-        const sorted = (allWords ?? []).sort((a, b) => {
-          const ra = reviewMap.get(a.id);
-          const rb = reviewMap.get(b.id);
-          if (!ra && !rb) return 0;
-          if (!ra) return -1;
-          if (!rb) return 1;
-          return ra.next_review_at < rb.next_review_at ? -1 : 1;
-        });
-        loaded = sorted;
-
-        // Build quality map from review data for personalised badge display
+        // Build quality map for badge display
         const qMap = new Map<string, number | null>();
         for (const [wid, r] of reviewMap) qMap.set(wid, r.last_quality);
         setQualityMap(qMap);
+
+        // Personalized ordering:
+        // 1. Struggling words (last_quality <= 2) — hardest first
+        // 2. Unseen words — randomized
+        // 3. Due words (next_review_at <= now, not struggling) — by ease_factor asc
+        // 4. Not-due reviewed words — randomized
+        const now = new Date().toISOString();
+        const struggled = (allWords ?? [])
+          .filter((w) => { const r = reviewMap.get(w.id); return r?.last_quality != null && r.last_quality <= 2; })
+          .sort((a, b) => (reviewMap.get(a.id)?.last_quality ?? 5) - (reviewMap.get(b.id)?.last_quality ?? 5));
+        const unseen = fisherYatesShuffle((allWords ?? []).filter((w) => !reviewMap.has(w.id)));
+        const due = (allWords ?? [])
+          .filter((w) => { const r = reviewMap.get(w.id); return r && r.next_review_at <= now && (r.last_quality == null || r.last_quality > 2); })
+          .sort((a, b) => (reviewMap.get(a.id)?.ease_factor ?? 2.5) - (reviewMap.get(b.id)?.ease_factor ?? 2.5));
+        const notDue = fisherYatesShuffle((allWords ?? []).filter((w) => { const r = reviewMap.get(w.id); return r && r.next_review_at > now; }));
+
+        loaded = [...struggled, ...unseen, ...due, ...notDue];
+
+        // If no filter is active, cap to 30 words to keep sessions focused
+        if (!setId && !categoryParam) loaded = loaded.slice(0, 30);
       }
 
       if (loaded.length === 0) {
@@ -157,20 +195,17 @@ function FlashcardPage() {
     if (savingReview) return;
     const word = words[currentIndex];
 
-    // Persist to DB (non-blocking for 'missed' mode — it's just practice)
-    if (modeParam !== 'missed' || quality <= 2) {
-      setSavingReview(true);
-      try {
-        await supabase.rpc('submit_flashcard_review', {
-          p_user_id: user!.id,
-          p_word_id: word.id,
-          p_quality: quality,
-        });
-      } catch {
-        // Non-fatal — continue
-      } finally {
-        setSavingReview(false);
-      }
+    setSavingReview(true);
+    try {
+      await supabase.rpc('submit_flashcard_review', {
+        p_user_id: user!.id,
+        p_word_id: word.id,
+        p_quality: quality,
+      });
+    } catch (err) {
+      console.error('[FlashCard] Failed to save review:', err);
+    } finally {
+      setSavingReview(false);
     }
 
     setResults((prev) => [...prev, { word_id: word.id, quality }]);

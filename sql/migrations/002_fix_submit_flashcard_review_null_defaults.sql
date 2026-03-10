@@ -1,16 +1,10 @@
--- ============================================================
--- submit_flashcard_review
--- ============================================================
--- Applies the SM-2 algorithm and updates spaced-repetition state
--- + category progress.
---
--- quality scale:
---   0 → complete blackout (forgot)
---   1 → incorrect, but the answer felt familiar
---   2 → incorrect, but the correct answer was easy once seen
---   3 → correct with significant difficulty
---   4 → correct after a hesitation
---   5 → perfect recall, no hesitation
+-- Migration 002: Fix null SM-2 defaults in submit_flashcard_review
+-- ---------------------------------------------------------------
+-- In PL/pgSQL, SELECT INTO sets variables to NULL when no row is found,
+-- overwriting the declared defaults. This caused ease_factor / repetitions /
+-- interval_days to be NULL on the very first review of a word, violating the
+-- NOT NULL constraint on flashcard_reviews.
+-- Fix: explicitly re-assign defaults when v_is_new is true.
 
 create or replace function public.submit_flashcard_review(
   p_user_id uuid,
@@ -98,7 +92,6 @@ begin
   values (
     p_user_id, v_category,
     case when v_is_new then 1 else 0 end,
-    -- mastered = words with repetitions >= 3 in this category (recomputed)
     (select count(*)
      from public.flashcard_reviews fr2
      join public.words w2 on w2.id = fr2.word_id

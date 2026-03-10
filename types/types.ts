@@ -329,8 +329,8 @@ export type Database = {
           created_at: string
           difficulty: number
           distractors: string[]
-          example_sentences: string[]
           embedding: string | null
+          example_sentences: string[]
           id: string
           set_id: string | null
           updated_at: string
@@ -341,8 +341,8 @@ export type Database = {
           created_at?: string
           difficulty: number
           distractors?: string[]
-          example_sentences?: string[]
           embedding?: string | null
+          example_sentences?: string[]
           id?: string
           set_id?: string | null
           updated_at?: string
@@ -353,8 +353,8 @@ export type Database = {
           created_at?: string
           difficulty?: number
           distractors?: string[]
-          example_sentences?: string[]
           embedding?: string | null
+          example_sentences?: string[]
           id?: string
           set_id?: string | null
           updated_at?: string
@@ -426,6 +426,10 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      submit_flashcard_review: {
+        Args: { p_quality: number; p_user_id: string; p_word_id: string }
+        Returns: undefined
+      }
       submit_game_session: {
         Args: {
           p_max_score: number
