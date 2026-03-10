@@ -61,10 +61,17 @@ export default function LearnPage() {
   const categoryTotals = data?.categoryTotals ?? ({} as Record<WordCategory, number>);
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace('/');
+    console.debug('[LearnPage] auth guard effect', { authLoading, hasUser: !!user });
+    if (!authLoading && !user) {
+      console.debug('[LearnPage] no user — redirecting to /');
+      router.replace('/');
+    }
   }, [user, authLoading, router]);
 
+  console.debug('[LearnPage] render', { authLoading, isLoading, hasUser: !!user });
+
   if (authLoading || isLoading) {
+    console.debug('[LearnPage] showing spinner', { authLoading, isLoading });
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
         <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />

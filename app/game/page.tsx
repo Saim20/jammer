@@ -96,7 +96,11 @@ export default function GamePage() {
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!authLoading && !user) router.replace('/');
+    console.debug('[GamePage] auth guard effect', { authLoading, hasUser: !!user });
+    if (!authLoading && !user) {
+      console.debug('[GamePage] no user — redirecting to /');
+      router.replace('/');
+    }
   }, [user, authLoading, router]);
 
   // ── startWord: resets per-question state ───────────────────────────────────
@@ -207,7 +211,10 @@ export default function GamePage() {
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  console.debug('[GamePage] render', { authLoading, isLoadingGame, phase, hasUser: !!user, gameError: gameError?.message ?? null });
+
   if (authLoading) {
+    console.debug('[GamePage] showing auth spinner');
     return <Spinner />;
   }
 

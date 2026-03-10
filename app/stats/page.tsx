@@ -173,10 +173,17 @@ export default function StatsPage() {
   });
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace('/');
+    console.debug('[StatsPage] auth guard effect', { authLoading, hasUser: !!user });
+    if (!authLoading && !user) {
+      console.debug('[StatsPage] no user — redirecting to /');
+      router.replace('/');
+    }
   }, [user, authLoading, router]);
 
+  console.debug('[StatsPage] render', { authLoading, isLoading, hasUser: !!user });
+
   if (authLoading || isLoading) {
+    console.debug('[StatsPage] showing spinner', { authLoading, isLoading });
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
         <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />

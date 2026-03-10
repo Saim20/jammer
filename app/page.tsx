@@ -18,10 +18,17 @@ export default function LandingPage() {
 
   // Already logged in → go straight to learn hub
   useEffect(() => {
-    if (!loading && user) router.replace('/learn');
+    console.debug('[LandingPage] auth guard effect', { loading, hasUser: !!user });
+    if (!loading && user) {
+      console.debug('[LandingPage] redirecting to /learn');
+      router.replace('/learn');
+    }
   }, [user, loading, router]);
 
+  console.debug('[LandingPage] render', { loading, hasUser: !!user });
+
   if (loading) {
+    console.debug('[LandingPage] showing auth spinner');
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
         <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />

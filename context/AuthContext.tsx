@@ -43,44 +43,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   async function fetchProfile(userId: string) {
+    console.debug('[Auth] fetchProfile start', { userId });
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .select('id, name, avatar_url, role, created_at, updated_at')
         .eq('id', userId)
         .maybeSingle();
+      console.debug('[Auth] fetchProfile result', { data, error });
       setProfile(data as UserProfile | null);
-    } catch {
+    } catch (err) {
+      console.error('[Auth] fetchProfile threw', err);
       setProfile(null);
     }
   }
 
   useEffect(() => {
-    // getSession() reads from localStorage — clears loading immediately
-    // without blocking on a network round-trip.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false); // auth state is known — unblock page guards immediately
-      if (session?.user) {
-        setProfileLoading(true);
-        fetchProfile(session.user.id).finally(() => setProfileLoading(false));
-      }
-    });
+    console.debug('[Auth] useEffect mount — calling getSession()');
 
-    // onAuthStateChange handles post-init events: SIGNED_IN, SIGNED_OUT,
-    // TOKEN_REFRESHED, etc. INITIAL_SESSION is skipped because getSession()
-    // already resolved the initial state.
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'INITIAL_SESSION') return;
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      console.debug('[Auth] getSession() resolved', {
+        hasSession: !!session,
+        userId: session?.user?.id ?? null,
+        expiresAt: session?.expires_at ?? null,
+        error,
+      });
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      console.debug('[Auth] loading → false (getSession)');
+      if (session?.user) {
+        setProfileLoading(true);
+        fetchProfile(session.user.id).finally(() => {
+          console.debug('[Auth] profileLoading → false (getSession path)');
+          setProfileLoading(false);
+        });
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.debug('[Auth] onAuthStateChange', {
+        event,
+        hasSession: !!session,
+        userId: session?.user?.id ?? null,
+      });
+      if (event === 'INITIAL_SESSION') {
+        console.debug('[Auth] INITIAL_SESSION skipped (handled by getSession)');
+        return;
+      }
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+      console.debug('[Auth] loading → false (onAuthStateChange:', event, ')');
       if (session?.user) {
         setProfileLoading(true);
         await fetchProfile(session.user.id);
+        console.debug('[Auth] profileLoading → false (onAuthStateChange path)');
         setProfileLoading(false);
       } else {
         setProfile(null);
@@ -88,10 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      console.debug('[Auth] useEffect cleanup — unsubscribing');
+      subscription.unsubscribe();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function signInWithGoogle() {
+    console.debug('[Auth] signInWithGoogle triggered', { origin: window.location.origin });
     try {
       await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -101,16 +125,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
     } catch (err) {
-      console.error('Google sign-in failed:', err);
+      console.error('[Auth] Google sign-in failed:', err);
     }
   }
 
   async function logout() {
+    console.debug('[Auth] logout triggered');
     try {
       await supabase.auth.signOut();
+      console.debug('[Auth] signOut complete — navigating to /');
       router.push('/');
     } catch (err) {
-      console.error('Sign-out failed:', err);
+      console.error('[Auth] Sign-out failed:', err);
     }
   }
 

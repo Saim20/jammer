@@ -301,7 +301,11 @@ export default function AdminPage() {
 
   // ── Auth guard ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!authLoading && !profileLoading && (!user || !isAdmin)) router.replace('/');
+    console.debug('[AdminPage] auth guard effect', { authLoading, profileLoading, hasUser: !!user, isAdmin });
+    if (!authLoading && !profileLoading && (!user || !isAdmin)) {
+      console.debug('[AdminPage] access denied — redirecting to /', { hasUser: !!user, isAdmin });
+      router.replace('/');
+    }
   }, [user, authLoading, profileLoading, isAdmin, router]);
 
   async function saveConfig() {
