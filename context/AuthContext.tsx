@@ -50,54 +50,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileLoading(false);
       return;
     }
-    console.debug('[Auth] fetchProfile start', { userId: user.id });
     setProfileLoading(true);
     (async () => {
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('users')
           .select('id, name, avatar_url, role, plan, created_at, updated_at')
           .eq('id', user.id)
           .maybeSingle();
-        console.debug('[Auth] fetchProfile result', { data, error });
         setProfile(data as UserProfile | null);
-      } catch (err: unknown) {
-        console.error('[Auth] fetchProfile threw', err);
+      } catch {
         setProfile(null);
       } finally {
-        console.debug('[Auth] profileLoading → false');
         setProfileLoading(false);
       }
     })();
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    console.debug('[Auth] useEffect mount');
-
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.debug('[Auth] onAuthStateChange', {
-        event,
-        hasSession: !!session,
-        userId: session?.user?.id ?? null,
-      });
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       // Only set state here — never call Supabase APIs inside this callback
       // as it may be invoked while the auth lock is held (causes deadlock).
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      console.debug('[Auth] loading → false (onAuthStateChange:', event, ')');
     });
 
     return () => {
-      console.debug('[Auth] useEffect cleanup — unsubscribing');
       subscription.unsubscribe();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function signInWithGoogle() {
-    console.debug('[Auth] signInWithGoogle triggered', { origin: window.location.origin });
     try {
       await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -112,10 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    console.debug('[Auth] logout triggered');
     try {
       await supabase.auth.signOut();
-      console.debug('[Auth] signOut complete — navigating to /');
       router.push('/');
     } catch (err) {
       console.error('[Auth] Sign-out failed:', err);

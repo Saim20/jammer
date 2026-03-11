@@ -10,6 +10,9 @@ alter table public.game_sessions
 
 -- ── Update submit_game_session to accept p_mode ──────────────────────────────
 
+-- Drop the old 5-parameter overload so CREATE OR REPLACE is unambiguous
+drop function if exists public.submit_game_session(uuid, integer, integer, jsonb, text);
+
 create or replace function public.submit_game_session(
   p_user_id   uuid,
   p_score     integer,
