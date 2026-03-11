@@ -1,7 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { Bot, Sparkles, Check, X, Loader2, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
+
+type AgentProgressEvent =
+  | { type: 'start';    total: number }
+  | { type: 'checking'; word: string }
+  | { type: 'queued';   word: string; difficulty: number }
+  | { type: 'skipped';  word: string; reason: string }
+  | { type: 'done';     queued: number; skipped: number }
+  | { type: 'error';    message: string };
+
+type AgentLogEntry = Extract<AgentProgressEvent, { type: 'checking' | 'queued' | 'skipped' | 'error' }>;
+
+import { Bot, Sparkles, Check, X, Loader2, AlertCircle, ThumbsUp, ThumbsDown, Minus } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -28,8 +39,10 @@ export default function AgentTab() {
   const [theme, setTheme] = useState('');
   const [count, setCount] = useState(10);
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<{ queued: number; skipped_duplicates: number } | null>(null);
+  const [result, setResult] = useState<{ queued: number; skipped: number } | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<AgentLogEntry[]>([]);
+  const [liveTotal, setLiveTotal] = useState(0);
 
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -40,24 +53,50 @@ export default function AgentTab() {
     setRunning(true);
     setResult(null);
     setRunError(null);
+    setLogs([]);
+    setLiveTotal(0);
     try {
       const { data: { session: authSession } } = await supabase.auth.getSession();
       const token = authSession?.access_token;
       if (!token) throw new Error('Not authenticated');
+
       const res = await fetch('/api/word-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ theme: theme.trim() || undefined, count }),
       });
-      if (!res.ok) {
-        const body = await res.json() as { error?: string };
-        throw new Error(body.error ?? `Request failed: ${res.status}`);
+
+      if (!res.ok || !res.body) {
+        let errMsg = `Request failed: ${res.status}`;
+        try { const b = await res.json() as { error?: string }; if (b.error) errMsg = b.error; } catch { /* ignore */ }
+        throw new Error(errMsg);
       }
-      const data = await res.json() as { queued: number; skipped_duplicates: number };
-      setResult(data);
-      if (data.queued > 0) {
-        setStatusFilter('pending');
-        refetch();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const event = JSON.parse(trimmed) as AgentProgressEvent;
+            if (event.type === 'start') {
+              setLiveTotal(event.total);
+            } else if (event.type === 'checking' || event.type === 'queued' || event.type === 'skipped' || event.type === 'error') {
+              setLogs((prev) => [...prev.slice(-49), event as AgentLogEntry]);
+            } else if (event.type === 'done') {
+              setResult({ queued: event.queued, skipped: event.skipped });
+              if (event.queued > 0) { setStatusFilter('pending'); refetch(); }
+            }
+          } catch { /* ignore malformed lines */ }
+        }
       }
     } catch (err) {
       setRunError(err instanceof Error ? err.message : 'Unknown error');
@@ -159,20 +198,70 @@ export default function AgentTab() {
             <AlertCircle className="w-4 h-4 shrink-0" />{runError}
           </div>
         )}
-        {result && (
+        {result && !running && (
           <div className="flex items-center gap-2 text-emerald-400 text-sm bg-emerald-950/40 border border-emerald-800 rounded-xl px-4 py-3">
             <Check className="w-4 h-4 shrink-0" />
             Queued {result.queued} new word{result.queued !== 1 ? 's' : ''} for review.
-            {result.skipped_duplicates > 0 && ` Skipped ${result.skipped_duplicates} near-duplicate${result.skipped_duplicates !== 1 ? 's' : ''}.`}
+            {result.skipped > 0 && ` Skipped ${result.skipped} near-duplicate${result.skipped !== 1 ? 's' : ''}.`}
           </div>
         )}
+
+        {/* Live streaming log */}
+        {(running || logs.length > 0) && (
+          <div className="space-y-2">
+            {running && liveTotal > 0 && (
+              <div className="flex items-center gap-3 text-xs text-gray-400">
+                <Loader2 className="w-3 h-3 animate-spin text-violet-400" />
+                <span className="text-violet-300 font-medium">{logs.filter((l) => l.type === 'queued').length}</span>
+                <span>/ {liveTotal} queued</span>
+                {logs.filter((l) => l.type === 'skipped').length > 0 && (
+                  <span className="text-amber-600">{logs.filter((l) => l.type === 'skipped').length} skipped</span>
+                )}
+              </div>
+            )}
+            <div className="max-h-44 overflow-y-auto bg-gray-950 border border-gray-800 rounded-xl p-3 space-y-1.5">
+              {logs.slice(-20).map((entry, i) => {
+                if (entry.type === 'checking') return (
+                  <div key={i} className="flex items-center gap-2 text-xs text-gray-500">
+                    <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                    Checking <span className="text-gray-300 font-medium">{entry.word}</span>…
+                  </div>
+                );
+                if (entry.type === 'queued') return (
+                  <div key={i} className="flex items-center gap-2 text-xs text-emerald-400">
+                    <Check className="w-3 h-3 shrink-0" />
+                    <span className="font-medium">{entry.word}</span>
+                    <span className="text-emerald-700">difficulty {entry.difficulty}</span>
+                  </div>
+                );
+                if (entry.type === 'skipped') return (
+                  <div key={i} className="flex items-center gap-2 text-xs text-amber-600">
+                    <Minus className="w-3 h-3 shrink-0" />
+                    <span className="font-medium">{entry.word}</span>
+                    <span className="text-amber-800">— {entry.reason}</span>
+                  </div>
+                );
+                if (entry.type === 'error') return (
+                  <div key={i} className="flex items-center gap-2 text-xs text-red-400">
+                    <AlertCircle className="w-3 h-3 shrink-0" />{entry.message}
+                  </div>
+                );
+                return null;
+              })}
+              {logs.length === 0 && running && (
+                <p className="text-xs text-gray-600">Initialising agent…</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={runAgent}
           disabled={running}
           className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-colors"
         >
           {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
-          {running ? 'Discovering words…' : 'Discover Words'}
+          {running ? 'Agent running…' : 'Run Word Agent'}
         </button>
       </div>
 

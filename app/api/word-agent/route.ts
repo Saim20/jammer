@@ -1,14 +1,18 @@
 /**
  * POST /api/word-agent
  *
- * Admin-only endpoint that uses Gemini to discover new vocabulary words,
- * checks for near-duplicates via vector similarity, then queues them in
- * `word_candidates` for admin review.
+ * Admin-only agentic endpoint. Uses Gemini via the Vercel AI SDK to generate
+ * vocabulary words one at a time, checking each for near-duplicates via vector
+ * similarity before queueing in `word_candidates` for admin review.
+ *
+ * Context words for the prompt are retrieved semantically (theme embedding →
+ * match_words) rather than fetched as a random dump, so Gemini avoids the words
+ * it is most likely to duplicate.
  *
  * Request body:  { theme?: string; count?: number }
  * Auth header:   Authorization: Bearer <supabase_access_token>
  *
- * Response:      { queued: number; skipped_duplicates: number }
+ * Response:      NDJSON stream of ProgressEvent objects
  *
  * Env vars required:
  *   NEXT_PUBLIC_SUPABASE_URL
@@ -18,6 +22,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { generateText, tool, stepCountIs } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { z } from 'zod';
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 
@@ -29,18 +36,17 @@ const GEMINI_GENERATE_MODEL  = 'gemini-2.5-flash';
 const GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001';
 const EMBEDDING_DIM          = 1536;
 
-const GENERATE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_GENERATE_MODEL}:generateContent`;
-const EMBED_URL    = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_EMBEDDING_MODEL}:batchEmbedContents`;
+const EMBED_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_EMBEDDING_MODEL}:batchEmbedContents`;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface GeneratedWord {
-  word: string;
-  correct_definition: string;
-  distractors: string[];
-  example_sentences: string[];
-  difficulty: number;
-}
+export type ProgressEvent =
+  | { type: 'start';    total: number }
+  | { type: 'checking'; word: string }
+  | { type: 'queued';   word: string; difficulty: number }
+  | { type: 'skipped';  word: string; reason: string }
+  | { type: 'done';     queued: number; skipped: number }
+  | { type: 'error';    message: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,26 +55,29 @@ function l2Normalize(vec: number[]): number[] {
   return norm === 0 ? vec : vec.map((v) => v / norm);
 }
 
-async function generateEmbeddings(texts: string[]): Promise<(number[] | null)[]> {
-  if (texts.length === 0) return [];
+async function embedText(
+  text: string,
+  taskType: 'RETRIEVAL_QUERY' | 'RETRIEVAL_DOCUMENT' = 'RETRIEVAL_DOCUMENT',
+): Promise<number[] | null> {
   try {
     const res = await fetch(`${EMBED_URL}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        requests: texts.map((text) => ({
+        requests: [{
           model: `models/${GEMINI_EMBEDDING_MODEL}`,
           content: { parts: [{ text }] },
-          taskType: 'RETRIEVAL_DOCUMENT',
+          taskType,
           outputDimensionality: EMBEDDING_DIM,
-        })),
+        }],
       }),
     });
-    if (!res.ok) return texts.map(() => null);
+    if (!res.ok) return null;
     const json = await res.json() as { embeddings: { values: number[] }[] };
-    return json.embeddings.map((e) => l2Normalize(e.values));
+    const values = json.embeddings[0]?.values;
+    return values ? l2Normalize(values) : null;
   } catch {
-    return texts.map(() => null);
+    return null;
   }
 }
 
@@ -120,158 +129,175 @@ export async function POST(req: NextRequest) {
     // use defaults
   }
 
-  // 4. Fetch existing words for context + duplicate detection
-  const { data: existingWords } = await serviceClient
-    .from('words')
-    .select('word')
-    .order('created_at', { ascending: false });
+  // 4. Set up NDJSON streaming response
+  const encoder = new TextEncoder();
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
 
-  const existingWordSet = new Set((existingWords ?? []).map((w: { word: string }) => w.word.toLowerCase()));
-
-  // Also fetch already-queued candidates to avoid re-suggesting them
-  const { data: existingCandidates } = await serviceClient
-    .from('word_candidates')
-    .select('word')
-    .in('status', ['pending', 'approved']);
-  for (const c of existingCandidates ?? []) {
-    existingWordSet.add((c as { word: string }).word.toLowerCase());
+  function emit(event: ProgressEvent): void {
+    writer.write(encoder.encode(JSON.stringify(event) + '\n')).catch(() => {});
   }
 
-  // Pick a random sample of existing words to give Gemini context
-  const sampleWords = (existingWords ?? [])
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 60)
-    .map((w: { word: string }) => w.word);
+  // 5. Run agent asynchronously — keeps the stream open until done
+  void (async () => {
+    try {
+      // Fetch context words (semantically related via theme embedding) and the
+      // full word-name set (for O(1) textual dedup) in parallel.
+      const [allWordsResult, candidatesResult] = await Promise.all([
+        serviceClient.from('words').select('word'),
+        serviceClient.from('word_candidates').select('word').in('status', ['pending', 'approved']),
+      ]);
 
-  // 5. Call Gemini to generate words
-  const prompt = `You are an expert English vocabulary teacher. Generate exactly ${count} important English vocabulary words that would be valuable for language learners (GRE/SAT/academic level) but are NOT in the list below.${theme ? `\n\nFocus area: ${theme}` : ''}
+      // existingWordSet is mutated as words are queued to prevent in-session duplicates
+      const existingWordSet = new Set<string>();
+      for (const w of allWordsResult.data ?? [])    existingWordSet.add((w as { word: string }).word.toLowerCase());
+      for (const c of candidatesResult.data ?? [])  existingWordSet.add((c as { word: string }).word.toLowerCase());
 
-Words already in the database (DO NOT include these or close synonyms):
-${sampleWords.join(', ')}
-
-For each word provide:
-1. The word itself (a single English word or compound)
-2. A clear, student-friendly definition (25–60 words)
-3. Exactly 3 plausible but incorrect definitions (multiple-choice distractors, similar style to the correct one)
-4. Exactly 3 natural example sentences that demonstrate the word in context (not dictionary examples)
-5. A difficulty rating 1–10 (1=everyday, 5=educated adult, 8=GRE level, 10=highly specialized)
-
-Respond with ONLY a JSON array (no markdown, no commentary):
-[
-  {
-    "word": "...",
-    "correct_definition": "...",
-    "distractors": ["...", "...", "..."],
-    "example_sentences": ["...", "...", "..."],
-    "difficulty": 7
-  }
-]`;
-
-  let generated: GeneratedWord[] = [];
-  try {
-    const geminiRes = await fetch(`${GENERATE_URL}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.7 },
-      }),
-    });
-
-    if (!geminiRes.ok) {
-      const errBody = await geminiRes.text();
-      console.error('[word-agent] Gemini generate error:', errBody);
-      return NextResponse.json({ error: `Gemini API error: ${geminiRes.status}` }, { status: 502 });
-    }
-
-    const geminiJson = await geminiRes.json() as {
-      candidates?: { content: { parts: { text: string }[] } }[];
-    };
-    const rawText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
-
-    // Parse, stripping any accidental markdown fences
-    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-    const parsed = JSON.parse(cleaned) as GeneratedWord[];
-    if (Array.isArray(parsed)) {
-      generated = parsed.filter(
-        (w) =>
-          typeof w.word === 'string' &&
-          typeof w.correct_definition === 'string' &&
-          Array.isArray(w.distractors) && w.distractors.length === 3 &&
-          Array.isArray(w.example_sentences) &&
-          typeof w.difficulty === 'number' &&
-          w.difficulty >= 1 && w.difficulty <= 10,
-      );
-    }
-  } catch (err) {
-    console.error('[word-agent] Gemini generate/parse error:', err);
-    return NextResponse.json({ error: 'Failed to generate or parse words from Gemini' }, { status: 502 });
-  }
-
-  if (generated.length === 0) {
-    return NextResponse.json({ queued: 0, skipped_duplicates: 0 });
-  }
-
-  // 6. Filter textual duplicates (exact or already-queued)
-  const novel = generated.filter((w) => !existingWordSet.has(w.word.toLowerCase()));
-  const textSkipped = generated.length - novel.length;
-
-  if (novel.length === 0) {
-    return NextResponse.json({ queued: 0, skipped_duplicates: textSkipped });
-  }
-
-  // 7. Generate embeddings for novel candidates
-  const embedTexts = novel.map((w) => `word: ${w.word}. definition: ${w.correct_definition}`);
-  const embeddings = await generateEmbeddings(embedTexts);
-
-  // 8. Vector near-duplicate check via match_words RPC (threshold 0.92)
-  const toInsert: (GeneratedWord & { embedding: number[] | null })[] = [];
-  let vectorSkipped = 0;
-
-  for (let i = 0; i < novel.length; i++) {
-    const emb = embeddings[i];
-    if (emb) {
-      const { data: matches } = await serviceClient.rpc('match_words', {
-        query_embedding: JSON.stringify(emb),
-        match_threshold: 0.92,
-        match_count: 1,
-      });
-      if (matches && (matches as unknown[]).length > 0) {
-        vectorSkipped++;
-        continue;
+      // Context words: semantic neighbours of the theme (RETRIEVAL_QUERY → match_words),
+      // or the 80 most-recently-added words when no theme is given.
+      let contextWords: string[];
+      if (theme) {
+        const themeEmb = await embedText(theme, 'RETRIEVAL_QUERY');
+        if (themeEmb) {
+          const { data: related } = await serviceClient.rpc('match_words', {
+            query_embedding: JSON.stringify(themeEmb),
+            match_threshold: 0.2,
+            match_count: 60,
+          });
+          contextWords = (related as { word: string }[] | null)?.map((w) => w.word) ?? [];
+        } else {
+          contextWords = [];
+        }
+      } else {
+        const { data: recent } = await serviceClient
+          .from('words').select('word').order('created_at', { ascending: false }).limit(80);
+        contextWords = (recent ?? []).map((w: { word: string }) => w.word);
       }
+
+      emit({ type: 'start', total: count });
+
+      let queued  = 0;
+      let skipped = 0;
+
+      const google = createGoogleGenerativeAI({ apiKey: GEMINI_API_KEY });
+
+      await generateText({
+        model: google(GEMINI_GENERATE_MODEL),
+        // Allow enough steps: each process_word call is one step; budget for retries
+        stopWhen: stepCountIs(Math.min(150, count * 2 + 10)),
+        system: [
+          `You are a vocabulary generation agent for a GRE/SAT-level English learning app.`,
+          `Goal: successfully queue exactly ${count} unique vocabulary words${theme ? ` on the theme: "${theme}"` : ''}.`,
+          `For every word you want to add, call the process_word tool with all fields fully populated.`,
+          `The tool handles near-duplicate detection and tells you if a word was accepted or rejected.`,
+          `If a word is rejected as a duplicate, try a different word. Keep going until ${count} are queued.`,
+          ``,
+          `Words already in the database — DO NOT repeat these or close synonyms:`,
+          contextWords.join(', '),
+        ].join('\n'),
+        prompt: `Queue ${count} GRE/SAT-level English vocabulary words${theme ? ` focused on: ${theme}` : ''}.`,
+        tools: {
+          process_word: tool({
+            description: [
+              'Submit a single vocabulary word for uniqueness validation and queue insertion.',
+              'Embeds the word+definition, checks vector near-duplicates (threshold 0.92),',
+              'and inserts unique words into the pending review queue.',
+              'Returns { status: "queued" | "skipped" | "error", reason?: string }.',
+            ].join(' '),
+            inputSchema: z.object({
+              word: z.string()
+                .describe('The vocabulary word (single English word or hyphenated compound)'),
+              correct_definition: z.string().min(20).max(300)
+                .describe('Student-friendly definition, 25–60 words'),
+              distractors: z.array(z.string().min(10)).length(3)
+                .describe('Exactly 3 plausible but incorrect definitions, similar style to the correct one'),
+              example_sentences: z.array(z.string().min(10)).length(3)
+                .describe('Exactly 3 natural sentences demonstrating the word in context'),
+              difficulty: z.number().int().min(1).max(10)
+                .describe('Difficulty 1–10 (1=everyday, 5=educated adult, 8=GRE level, 10=highly specialized)'),
+            }),
+            execute: async ({ word, correct_definition, distractors, example_sentences, difficulty }) => {
+              emit({ type: 'checking', word });
+
+              // Fast textual dedup — O(1) Set lookup
+              if (existingWordSet.has(word.toLowerCase())) {
+                skipped++;
+                emit({ type: 'skipped', word, reason: 'already in database' });
+                return { status: 'skipped', reason: 'already in database' };
+              }
+
+              // Embed with RETRIEVAL_DOCUMENT — matches how stored words were indexed
+              const emb = await embedText(
+                `word: ${word}. definition: ${correct_definition}`,
+                'RETRIEVAL_DOCUMENT',
+              );
+
+              // Vector near-duplicate check via HNSW index
+              if (emb) {
+                const { data: matches } = await serviceClient.rpc('match_words', {
+                  query_embedding: JSON.stringify(emb),
+                  match_threshold: 0.92,
+                  match_count: 1,
+                });
+                if (matches && (matches as unknown[]).length > 0) {
+                  const similar = (matches as { word: string }[])[0].word;
+                  skipped++;
+                  emit({ type: 'skipped', word, reason: `near-duplicate of "${similar}"` });
+                  return { status: 'skipped', reason: `near-duplicate of "${similar}"` };
+                }
+              }
+
+              // Insert into word_candidates
+              const { error: insertErr } = await serviceClient
+                .from('word_candidates')
+                .insert({
+                  word,
+                  correct_definition,
+                  distractors:       distractors.slice(0, 3),
+                  example_sentences: example_sentences.slice(0, 3),
+                  difficulty,
+                  embedding: emb ? JSON.stringify(emb) : null,
+                  status:    'pending',
+                  ai_model:  GEMINI_GENERATE_MODEL,
+                });
+
+              if (insertErr) {
+                if (insertErr.code === '23505') {
+                  // Unique constraint violation — race condition or case mismatch
+                  skipped++;
+                  existingWordSet.add(word.toLowerCase());
+                  emit({ type: 'skipped', word, reason: 'already queued' });
+                  return { status: 'skipped', reason: 'already queued' };
+                }
+                emit({ type: 'error', message: `Failed to insert "${word}": ${insertErr.message}` });
+                return { status: 'error', reason: insertErr.message };
+              }
+
+              queued++;
+              existingWordSet.add(word.toLowerCase());
+              emit({ type: 'queued', word, difficulty });
+              return { status: 'queued' };
+            },
+          }),
+        },
+      });
+
+      emit({ type: 'done', queued, skipped });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('[word-agent]', message);
+      emit({ type: 'error', message });
+      emit({ type: 'done', queued: 0, skipped: 0 });
+    } finally {
+      writer.close().catch(() => {});
     }
-    toInsert.push({ ...novel[i], embedding: emb });
-  }
+  })();
 
-  // 9. Bulk insert into word_candidates
-  let queued = 0;
-  if (toInsert.length > 0) {
-    const rows = toInsert.map((w) => ({
-      word:               w.word,
-      correct_definition: w.correct_definition,
-      distractors:        w.distractors.slice(0, 3),
-      example_sentences:  w.example_sentences.slice(0, 3),
-      difficulty:         w.difficulty,
-      embedding:          w.embedding ? JSON.stringify(w.embedding) : null,
-      status:             'pending',
-      ai_model:           GEMINI_GENERATE_MODEL,
-    }));
-
-    const { data: inserted, error: insertErr } = await serviceClient
-      .from('word_candidates')
-      .insert(rows)
-      .select('id');
-
-    if (insertErr) {
-      console.error('[word-agent] Insert error:', insertErr);
-      // Partial success is possible if some rows conflict; count what we got
-    }
-    queued = (inserted ?? []).length;
-  }
-
-  return NextResponse.json({
-    queued,
-    skipped_duplicates: textSkipped + vectorSkipped,
+  return new Response(readable, {
+    headers: {
+      'Content-Type':  'application/x-ndjson',
+      'Cache-Control': 'no-cache, no-store',
+      'X-Accel-Buffering': 'no', // disable nginx/proxy buffering
+    },
   });
 }
