@@ -105,11 +105,13 @@ export type WordWithReview = Word & {
 
 /**
  * User profile stored in `public.users`.
- * Derived from the generated DB type with `role` narrowed from `string` to a union.
+ * Derived from the generated DB type with `role` and `plan` narrowed from strings to unions.
  */
-export type UserProfile = Omit<Tables<'users'>, 'role'> & {
+export type UserProfile = Omit<Tables<'users'>, 'role' | 'plan'> & {
   /** 'player' (default) or 'admin'. Granted via SQL: update users set role='admin'. */
   role: 'player' | 'admin';
+  /** Subscription tier — managed by admins only. 'free' is the default. */
+  plan: 'free' | 'student' | 'pro';
 };
 
 /**
@@ -132,7 +134,18 @@ export interface LeaderboardEntry {
 }
 
 /** Analytics record for a completed game round, stored in `game_sessions`. */
-export type GameSession = Tables<'game_sessions'>;
+export type GameSession = Omit<Tables<'game_sessions'>, 'mode'> & {
+  /** The exercise type that generated this session. */
+  mode: 'vocabulary' | 'sentence_blank' | 'sentence_match';
+};
+
+/**
+ * AI-generated word candidate pending admin review, stored in `word_candidates`.
+ * After approval the row is copied into the `words` table.
+ */
+export type WordCandidate = Omit<Tables<'word_candidates'>, 'status'> & {
+  status: 'pending' | 'approved' | 'rejected';
+};
 
 /** Per-word result within a game session, stored in `session_words`. */
 export type SessionWord = Tables<'session_words'>;

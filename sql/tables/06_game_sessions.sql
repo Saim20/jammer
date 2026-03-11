@@ -10,6 +10,8 @@ create table if not exists public.game_sessions (
   word_count integer     not null,
   max_score  integer     not null,
   type       text        not null default 'global',
+  mode       text        not null default 'vocabulary'
+               check (mode in ('vocabulary', 'sentence_blank', 'sentence_match')),
   created_at timestamptz not null default now()
 );
 

@@ -42,70 +42,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const router = useRouter();
 
-  async function fetchProfile(userId: string) {
-    console.debug('[Auth] fetchProfile start', { userId });
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, name, avatar_url, role, created_at, updated_at')
-        .eq('id', userId)
-        .maybeSingle();
-      console.debug('[Auth] fetchProfile result', { data, error });
-      setProfile(data as UserProfile | null);
-    } catch (err) {
-      console.error('[Auth] fetchProfile threw', err);
+  // Fetch profile in a separate effect so it never runs inside onAuthStateChange,
+  // which would call getSession() while the auth lock is still held.
+  useEffect(() => {
+    if (!user) {
       setProfile(null);
+      setProfileLoading(false);
+      return;
     }
-  }
+    console.debug('[Auth] fetchProfile start', { userId: user.id });
+    setProfileLoading(true);
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, name, avatar_url, role, plan, created_at, updated_at')
+          .eq('id', user.id)
+          .maybeSingle();
+        console.debug('[Auth] fetchProfile result', { data, error });
+        setProfile(data as UserProfile | null);
+      } catch (err: unknown) {
+        console.error('[Auth] fetchProfile threw', err);
+        setProfile(null);
+      } finally {
+        console.debug('[Auth] profileLoading → false');
+        setProfileLoading(false);
+      }
+    })();
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    console.debug('[Auth] useEffect mount — calling getSession()');
-
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      console.debug('[Auth] getSession() resolved', {
-        hasSession: !!session,
-        userId: session?.user?.id ?? null,
-        expiresAt: session?.expires_at ?? null,
-        error,
-      });
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-      console.debug('[Auth] loading → false (getSession)');
-      if (session?.user) {
-        setProfileLoading(true);
-        fetchProfile(session.user.id).finally(() => {
-          console.debug('[Auth] profileLoading → false (getSession path)');
-          setProfileLoading(false);
-        });
-      }
-    });
+    console.debug('[Auth] useEffect mount');
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       console.debug('[Auth] onAuthStateChange', {
         event,
         hasSession: !!session,
         userId: session?.user?.id ?? null,
       });
-      if (event === 'INITIAL_SESSION') {
-        console.debug('[Auth] INITIAL_SESSION skipped (handled by getSession)');
-        return;
-      }
+      // Only set state here — never call Supabase APIs inside this callback
+      // as it may be invoked while the auth lock is held (causes deadlock).
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
       console.debug('[Auth] loading → false (onAuthStateChange:', event, ')');
-      if (session?.user) {
-        setProfileLoading(true);
-        await fetchProfile(session.user.id);
-        console.debug('[Auth] profileLoading → false (onAuthStateChange path)');
-        setProfileLoading(false);
-      } else {
-        setProfile(null);
-        setProfileLoading(false);
-      }
     });
 
     return () => {

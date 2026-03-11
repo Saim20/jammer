@@ -13,6 +13,8 @@ create table if not exists public.users (
   avatar_url text,
   role       text        not null default 'player'
                check (role in ('player', 'admin')),
+  plan       text        not null default 'free'
+               check (plan in ('free', 'student', 'pro')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -75,14 +77,26 @@ create policy "users_select_authenticated"
   on public.users for select to authenticated
   using (true);
 
--- Users can update their own profile display data but cannot escalate their role
+-- Users can update their own profile display data but cannot escalate role or plan
 create policy "users_update_own_profile"
   on public.users for update to authenticated
   using (id = auth.uid())
   with check (
-    id = auth.uid() and
-    role = (select role from public.users where id = auth.uid())
+    id = auth.uid()
+    and role = (select role from public.users where id = auth.uid())
+    and plan = (select plan from public.users where id = auth.uid())
   );
+
+-- Admins can update any user's role and plan
+create policy "users_update_admin"
+  on public.users for update to authenticated
+  using  (public.is_admin())
+  with check (public.is_admin());
+
+-- Anon users can read profiles (needed for public leaderboard view join)
+create policy "users_select_public"
+  on public.users for select to anon
+  using (true);
 
 -- Inserts are handled exclusively by the handle_new_user() trigger
 -- (security definer, runs as postgres — bypasses RLS)

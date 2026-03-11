@@ -118,6 +118,7 @@ export type Database = {
           created_at: string
           id: string
           max_score: number
+          mode: string
           score: number
           type: string
           user_id: string
@@ -127,6 +128,7 @@ export type Database = {
           created_at?: string
           id?: string
           max_score: number
+          mode?: string
           score: number
           type?: string
           user_id: string
@@ -136,6 +138,7 @@ export type Database = {
           created_at?: string
           id?: string
           max_score?: number
+          mode?: string
           score?: number
           type?: string
           user_id?: string
@@ -302,6 +305,7 @@ export type Database = {
           created_at: string
           id: string
           name: string | null
+          plan: string
           role: string
           updated_at: string
         }
@@ -310,6 +314,7 @@ export type Database = {
           created_at?: string
           id: string
           name?: string | null
+          plan?: string
           role?: string
           updated_at?: string
         }
@@ -318,10 +323,67 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string | null
+          plan?: string
           role?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      word_candidates: {
+        Row: {
+          ai_model: string | null
+          correct_definition: string
+          created_at: string
+          distractors: string[]
+          difficulty: number
+          embedding: string | null
+          example_sentences: string[]
+          id: string
+          review_notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          word: string
+        }
+        Insert: {
+          ai_model?: string | null
+          correct_definition: string
+          created_at?: string
+          distractors?: string[]
+          difficulty: number
+          embedding?: string | null
+          example_sentences?: string[]
+          id?: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          word: string
+        }
+        Update: {
+          ai_model?: string | null
+          correct_definition?: string
+          created_at?: string
+          distractors?: string[]
+          difficulty?: number
+          embedding?: string | null
+          example_sentences?: string[]
+          id?: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          word?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "word_candidates_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       words: {
         Row: {
@@ -398,6 +460,22 @@ export type Database = {
         Args: { p_difficulty: number }
         Returns: Database["public"]["Enums"]["word_category"]
       }
+      get_due_reviews: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          category: Database["public"]["Enums"]["word_category"]
+          correct_definition: string
+          difficulty: number
+          distractors: string[]
+          ease_factor: number
+          id: string
+          interval_days: number
+          next_review_at: string
+          repetitions: number
+          set_id: string
+          word: string
+        }[]
+      }
       get_weak_words: {
         Args: { p_limit?: number; p_threshold?: number; p_user_id: string }
         Returns: {
@@ -433,6 +511,7 @@ export type Database = {
       submit_game_session: {
         Args: {
           p_max_score: number
+          p_mode?: string
           p_score: number
           p_type?: string
           p_user_id: string

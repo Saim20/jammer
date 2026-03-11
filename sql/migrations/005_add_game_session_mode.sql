@@ -1,12 +1,14 @@
 -- ============================================================
--- submit_game_session
+-- Migration 005: Add mode column to game_sessions
+-- Tracks the exercise type: vocabulary (default), sentence_blank,
+-- or sentence_match — orthogonal to the leaderboard `type` column.
 -- ============================================================
--- Single atomic function for ALL end-of-game persistence:
---   1. Inserts a game_sessions row
---   2. Bulk-inserts session_words rows
---   3. Upserts user_word_stats aggregate counters
---   4. Upserts the leaderboard personal best (never lowers a score)
--- Returns the new session UUID.
+
+alter table public.game_sessions
+  add column if not exists mode text not null default 'vocabulary'
+    check (mode in ('vocabulary', 'sentence_blank', 'sentence_match'));
+
+-- ── Update submit_game_session to accept p_mode ──────────────────────────────
 
 create or replace function public.submit_game_session(
   p_user_id   uuid,
@@ -24,7 +26,7 @@ begin
     raise exception 'Unauthorized';
   end if;
 
-  -- 1. Session record (includes mode)
+  -- 1. Session record (now includes mode)
   insert into public.game_sessions (user_id, score, word_count, max_score, type, mode)
   values (p_user_id, p_score, jsonb_array_length(p_words), p_max_score, p_type, p_mode)
   returning id into v_session_id;

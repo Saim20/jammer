@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BookOpen, Zap, RefreshCw, Target, ChevronRight, Loader2 } from 'lucide-react';
+import { BookOpen, Zap, RefreshCw, Target, ChevronRight, Loader2, FileText, Shuffle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -146,6 +146,36 @@ export default function LearnPage() {
             <p className="text-sm text-gray-400">
               {missedCount > 0 ? `${missedCount} word${missedCount !== 1 ? 's' : ''} missed in past jams` : 'No missed words yet!'}
             </p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-300 transition-colors mt-0.5" />
+        </Link>
+
+        {/* Sentence fill-in */}
+        <Link
+          href="/game/sentence"
+          className="group relative rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 flex items-start gap-4 transition-all hover:scale-[1.02] hover:bg-emerald-500/15 active:scale-100"
+        >
+          <div className="p-2.5 rounded-xl bg-emerald-500/20 shrink-0">
+            <FileText className="w-5 h-5 text-emerald-300" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-white mb-0.5">Sentence Fill-in</p>
+            <p className="text-sm text-gray-400">Pick the missing word in a real sentence.</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-300 transition-colors mt-0.5" />
+        </Link>
+
+        {/* Sentence match */}
+        <Link
+          href="/game/sentence-match"
+          className="group relative rounded-2xl border border-fuchsia-500/40 bg-fuchsia-500/10 p-5 flex items-start gap-4 transition-all hover:scale-[1.02] hover:bg-fuchsia-500/15 active:scale-100"
+        >
+          <div className="p-2.5 rounded-xl bg-fuchsia-500/20 shrink-0">
+            <Shuffle className="w-5 h-5 text-fuchsia-300" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-white mb-0.5">Sentence Match</p>
+            <p className="text-sm text-gray-400">Match words to sentence examples in context.</p>
           </div>
           <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-300 transition-colors mt-0.5" />
         </Link>
