@@ -20,9 +20,120 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
-/** Replace the target word in a sentence with blanks, case-insensitively. */
+/** Escape a string for safe use inside a RegExp. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Build common morphological variants of a word (base, -ing, -ed, -s/-es forms)
+ * so that inflected forms used in example sentences are matched correctly.
+ *
+ * For words matching a CVC (consonant-vowel-consonant) pattern we include BOTH
+ * the consonant-doubled form (run → running) and the simple form (happen →
+ * happening). Detecting syllable stress accurately would require a dictionary,
+ * so emitting both ensures coverage for single-syllable words (run/stop) and
+ * multi-syllable words with an unstressed final syllable (happen/open). The
+ * simple form for a single-syllable word (e.g. "runing") never appears in real
+ * sentences, so the extra pattern is completely harmless.
+ */
+function buildWordForms(word: string): string[] {
+  const lower = word.toLowerCase();
+  const forms = new Set<string>([lower]);
+  const vowels = 'aeiou';
+  const len = lower.length;
+  const last = len >= 1 ? lower[len - 1] : '';
+  const penult = len >= 2 ? lower[len - 2] : '';
+  const antepenult = len >= 3 ? lower[len - 3] : '';
+
+  // ─── -ing forms (gerund / present participle) ───
+  if (lower.endsWith('ie')) {
+    // tie → tying
+    forms.add(lower.slice(0, -2) + 'ying');
+  } else if (
+    lower.endsWith('e') &&
+    !lower.endsWith('ee') &&
+    !lower.endsWith('oe') &&
+    !lower.endsWith('ye')
+  ) {
+    // dance → dancing, make → making (drop silent -e)
+    forms.add(lower.slice(0, -1) + 'ing');
+  } else if (
+    len >= 3 &&
+    !vowels.includes(last) &&
+    vowels.includes(penult) &&
+    !vowels.includes(antepenult) &&
+    !['w', 'x', 'y'].includes(last)
+  ) {
+    // CVC pattern: doubled form for stressed-final-syllable words (run → running,
+    // begin → beginning) plus simple form for multi-syllable unstressed words
+    // (happen → happening). Both are emitted; invalid forms never match sentences.
+    forms.add(lower + last + 'ing');
+    forms.add(lower + 'ing');
+  } else {
+    // walk → walking
+    forms.add(lower + 'ing');
+  }
+
+  // ─── -ed forms (simple past / past participle) ───
+  if (lower.endsWith('e')) {
+    // dance → danced (add only -d)
+    forms.add(lower + 'd');
+  } else if (
+    len >= 3 &&
+    !vowels.includes(last) &&
+    vowels.includes(penult) &&
+    !vowels.includes(antepenult) &&
+    !['w', 'x', 'y'].includes(last)
+  ) {
+    // CVC pattern: doubled form (stop → stopped) plus simple form (happen →
+    // happened). Invalid forms never match real sentences.
+    forms.add(lower + last + 'ed');
+    forms.add(lower + 'ed');
+  } else if (lower.endsWith('y') && penult && !vowels.includes(penult)) {
+    // carry → carried (y → ied when preceded by a consonant)
+    forms.add(lower.slice(0, -1) + 'ied');
+  } else {
+    forms.add(lower + 'ed');
+  }
+
+  // ─── -s / -es forms (plural / 3rd-person singular) ───
+  if (lower.endsWith('y') && penult && !vowels.includes(penult)) {
+    // carry → carries
+    forms.add(lower.slice(0, -1) + 'ies');
+  } else if (
+    lower.endsWith('s') ||
+    lower.endsWith('x') ||
+    lower.endsWith('z') ||
+    lower.endsWith('ch') ||
+    lower.endsWith('sh')
+  ) {
+    forms.add(lower + 'es');
+  } else {
+    forms.add(lower + 's');
+  }
+
+  return Array.from(forms);
+}
+
+/**
+ * Build a regex that matches the word or any of its common inflected forms,
+ * case-insensitively. Uses a single capture group so `$1` refers to the
+ * matched text (preserving the original inflected form).
+ */
+function buildWordRegex(word: string): RegExp {
+  const forms = buildWordForms(word);
+  // Sort longest-first so more specific patterns take priority over shorter
+  // overlapping ones, then join into a single alternation capture group.
+  const escaped = forms
+    .map(escapeRegex)
+    .sort((a, b) => b.length - a.length);
+  return new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi');
+}
+
+/** Replace the target word (and its common inflected forms) in a sentence with blanks. */
 function blankWord(sentence: string, word: string): string {
-  return sentence.replace(new RegExp(`\\b${word}\\b`, 'gi'), '_____');
+  return sentence.replace(buildWordRegex(word), '_____');
 }
 
 type Phase = 'loading' | 'playing' | 'feedback' | 'finished';
@@ -303,8 +414,8 @@ export default function SentenceBlankPage() {
           <p className="text-xl sm:text-2xl font-semibold text-white leading-relaxed">
             {phase === 'feedback'
               ? currentRound.sentence.replace(
-                  new RegExp(`\\b${currentRound.word.word}\\b`, 'gi'),
-                  `**${currentRound.word.word}**`,
+                  buildWordRegex(currentRound.word.word),
+                  `**$1**`,
                 ).split(/\*\*/).map((part, i) =>
                   i % 2 === 1
                     ? <span key={i} className="text-emerald-300 font-extrabold">{part}</span>
